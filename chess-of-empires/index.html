@@ -427,7 +427,7 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
       <li><b>Food buys people and horses:</b> every chess-piece unit and its checkers. <b>Wood buys the empire:</b> buildings, their checkers, the ages and machines (the trebuchet). Gold is the gold checker.</li>
       <li><b>Everything gathers on 4+.</b> In your home quadrant a villager gathers food or wood, your choice; in the food quadrant a5–d8 food; in the wood quadrant e1–h4 wood. Food and wood hold 0–6 each.</li>
       <li>One mill and one lumber camp, in the fields and the forest only: for one action every villager next to it, standing in the same field or forest, rolls. The Town Center is not a mill.</li>
-      <li><b>Gold</b>: from the Castle Age a villager standing in the <b>opponent’s home quadrant</b> takes one of the opponent’s reserve checkers as gold on 4+. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
+      <li><b>Gold</b>: from the Castle Age a villager standing in the <b>opponent’s home quadrant</b> takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with your villagers on both corners a8 and h1, either one trades for 2 actions: one die, 4+ takes one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. Or <b>taxation</b>: with two villagers in your home quadrant, one action, one die, only a 6 gives 1 gold. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
     </ul>
     <h3>Ages</h3>
     <ul>
@@ -552,7 +552,7 @@ function log(s, text) { G.log.push({s, r: G.round, t: text}); if (G.log.length >
 
 /* ================= queries ================= */
 const at = (f, r) => G.pcs.find(p => p.f === f && p.r === r);
-const free = (f, r) => inb(f, r) && !isCorner(f, r) && !isRock(f, r) && !at(f, r);
+const free = (f, r) => inb(f, r) && !(isCorner(f, r) && !(G && G.rules && G.rules.trade)) && !isRock(f, r) && !at(f, r);
 const mine = s => G.pcs.filter(p => p.o === s);
 const tc = s => G.pcs.find(p => p.o === s && p.k === "K");
 const age = s => { const t = tc(s); if (!t) return 0;
@@ -582,7 +582,7 @@ const geoRes = res => G.rules.swapFields ? (res === FOOD ? WOOD : FOOD) : res;  
 const inQuad = (f, r, res) => !isGold(f, r) && (geoRes(res) === FOOD ? f <= 3 && r >= 4 : f >= 4 && r <= 3);
 function quadDist(f, r, res) {   // effective distance for the quadrant rule (outside: 6 + steps to the quadrant)
   const c = geoRes(res) === FOOD ? [0, 7] : [7, 0];
-  if (f === c[0] && r === c[1]) return 0;
+  if (f === c[0] && r === c[1] && !G.rules.trade) return 0;
   if (inQuad(f, r, res)) return G.rules.away3 ? 2 : G.rules.gatherHalf ? 3 : QD;   // 2: 3+ on a die   // 3 means 4+ on a die = 50%
   const steps = geoRes(res) === FOOD ? Math.max(f - 3, 4 - r) : Math.max(4 - f, r - 3);
   return 6 + steps;
@@ -679,6 +679,10 @@ function ageCost(n) {
   return AGECOST[n];
 }
 // where can side s mine gold: the centre squares, or (raidGold) anywhere in the opponent's home quadrant
+const traderAt = (s, f, r) => G.pcs.find(q => q.o === s && q.k === "V" && q.f === f && q.r === r);
+function tradePartner(p) { if (!G.rules.trade || p.k !== "V" || !isCorner(p.f, p.r)) return null; return traderAt(p.o, 7 - p.f, 7 - p.r) || null; }
+function goldWanted(s) { return age(s) >= 2 && G.gold[s] < goldLimit(s) && GS()[1 - s] > 0 && (age(s) >= 3 || G.gold[s] < 1); }
+function homePartner(p) { if (!G.rules.homeGold || p.k !== "V" || !homeQ(p.o, p.f, p.r)) return null; return G.pcs.find(q => q !== p && q.o === p.o && q.k === "V" && !acted(q) && homeQ(p.o, q.f, q.r)) || null; }
 function goldSq(s, f, r) { return G.rules.raidGold ? homeQ(1 - s, f, r) : isGold(f, r); }
 function inQuadNbrs(f, r, res) { let n = 0; for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) if ((df || dr) && free(f + df, r + dr) && inQuad(f + df, r + dr, res)) n++; return n; }
 function homeNbrs(s, f, r) { let n = 0; for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) if ((df || dr) && inb(f + df, r + dr) && homeQ(s, f + df, r + dr)) n++; return n; }
@@ -736,6 +740,16 @@ function pieceActions(p) {
       const lim = goldLimit(s) - G.gold[s];
       mk("gather", "Mine gold", G.rules.goldHalf ? "4+ (50%) takes 1" : "5+ takes 1", A >= 2 && GS()[1 - s] > 0 && lim > 0,
          A < 2 ? "gold opens in the Castle Age" : GS()[1 - s] <= 0 ? (G.rules.goldRes ? "their reserve is empty" : "mine is empty") : (G.rules.gold2 ? "hold 2 gold at most" : "hold 2 at most before the Imperial Age"), {res: "gold"});
+    }
+    if (G.rules.homeGold && homeQ(s, p.f, p.r)) {
+      const q = homePartner(p), lim = goldLimit(s) - G.gold[s];
+      mk("homegold", "Collect taxes", "with a 2nd villager at home · 1 action · a 6 gives 1 gold", A >= 2 && !!q && GS()[1 - s] > 0 && lim > 0,
+         A < 2 ? "taxation opens in the Castle Age" : !q ? "needs a 2nd free villager in your home quadrant" : GS()[1 - s] <= 0 ? "their reserve is empty" : "hold 2 gold at most", {partner: q});
+    }
+    if (G.rules.trade && isCorner(p.f, p.r)) {
+      const q = tradePartner(p), lim = goldLimit(s) - G.gold[s], other = SQ([7 - p.f, 7 - p.r]);
+      mk("trade", "Trade for gold", `with the villager on ${other} · 2 actions · 4+ gives 1 gold`, A >= 2 && !!q && !acted(q) && GS()[1 - s] > 0 && lim > 0 && (G.acts[clsOf("trade", p)] || 0) >= 2,
+         A < 2 ? "trade opens in the Castle Age" : !q ? `needs your villager on ${other} too` : acted(q) ? `the villager on ${other} has acted` : GS()[1 - s] <= 0 ? "their reserve is empty" : lim <= 0 ? "hold 2 gold at most" : "needs 2 actions", {partner: q});
     }
     if (!isGold(p.f, p.r) && !(G.rules.raidGold && goldSq(s, p.f, p.r))) for (const [res, d] of gatherOpts(s, p.f, p.r)) {
       const need = effD(s, res, d) + 1, y = handYield(d);
@@ -1088,6 +1102,21 @@ function exec(a) {
     }
     case "crown": { const b = a.target, q = b.k === "B", was = name(b); pay(s, 0, CROWNW(q), CROWNG(q)); b.cr = true; G.acted.push(p.id); G.last = [[b.f, b.r]];
       G.crowns = G.crowns || {B: 0, camp: 0}; G.crowns[b.k]++; text = q ? "puts the queen on the barracks: now a castle" : `puts a rook on the ${was}: now a watch tower`; break; }
+    case "homegold": {
+      const q = a.partner || homePartner(p), x = roll();
+      G.acted.push(p.id); if (q) G.acted.push(q.id); G.last = [[p.f, p.r]].concat(q ? [[q.f, q.r]] : []);
+      if (x === 6) { const n = Math.min(1, GS()[1 - s], goldLimit(s) - G.gold[s]); GS()[1 - s] -= n; G.gold[s] += n; text = `collects taxes: rolls 6, +${n} gold`; }
+      else text = `collects taxes: rolls ${x}, nothing (needs a 6)`;
+      UI.msg = diceMsg([x], text); break;
+    }
+    case "trade": {
+      const q = a.partner || tradePartner(p), x = roll();
+      if ((G.acts[a.cls] || 0) > 0) spend(a.cls);   // the second action
+      G.acted.push(p.id); if (q) G.acted.push(q.id); G.last = [[p.f, p.r]].concat(q ? [[q.f, q.r]] : []);
+      if (x >= 4) { const n = Math.min(1, GS()[1 - s], goldLimit(s) - G.gold[s]); GS()[1 - s] -= n; G.gold[s] += n; text = `trades between a8 and h1: rolls ${x}, +${n} gold`; }
+      else text = `trades between a8 and h1: rolls ${x}, nothing`;
+      UI.msg = diceMsg([x], text); break;
+    }
     case "pack": p.up = !p.up; G.acted.push(p.id); G.last = [[p.f, p.r]]; text = p.up ? `the ${name(p)} unpacks` : `the ${name(p)} packs up`; break;
     case "campshoot": {
       if (p.k === "camp" && !G.rules.chk) G.pcs.filter(q => q.o === s && q.k === "V" && cd(q.f, q.r, p.f, p.r) === 1 && !acted(q)).forEach(q => G.acted.push(q.id));   // the crew mans the tower
@@ -1148,6 +1177,7 @@ function squareEV(s, f, r, self) {
       if (dist >= 1 && dist <= 2) best = Math.max(best, 0.6 * away * crew * need(s, res));
     }
   }
+  if (G.rules.trade && isCorner(f, r) && goldWanted(s)) { const o = at(f, r); if (!o || o === self) best = Math.max(best, 1.6); }   // a trade post
   return best - 1.4 * dangerAt(s, f, r);
 }
 function dangerAt(s, f, r) {
@@ -1225,6 +1255,8 @@ function aiOptions(s) {
       if (G.rules.prices2 && !G.rules.milFlex ? G.food[s] >= 1 : milPay(s)) cand.push(["I", 0.2]);
       for (const [k, b] of cand) push(base + b, {kind: "recruit", cls: cls("recruit"), p: v, k});
     }
+    if (G.rules.homeGold && goldWanted(s) && homeQ(s, v.f, v.r)) { const q = homePartner(v); if (q) push(age(s) === 2 ? 2.7 : 2.2, {kind: "homegold", cls: cls("homegold", v), p: v, partner: q}); }
+    if (G.rules.trade && goldWanted(s) && isCorner(v.f, v.r)) { const q = tradePartner(v); if (q && !acted(q) && (G.acts[cls("trade", v)] || 0) >= 2) push(4.3 - dangerAt(s, v.f, v.r) * 0.6, {kind: "trade", cls: cls("trade", v), p: v, partner: q}); }
     // move villager (computed first: gathering far away is poor if a better square is one move off)
     const here = squareEV(s, v.f, v.r, v); let best = null, bv = -9;
     for (const t of moves(v)) { const e = squareEV(s, t[0], t[1], v); if (e > bv) { bv = e; best = t; } }
@@ -1243,6 +1275,15 @@ function aiOptions(s) {
       const TCx = tc(s), inCrew = !!FX.crew && (camps(s).some(c => !acted(c) && cd(c.f, c.r, v.f, v.r) === 1 && (!G.rules.crewInQuad || inQuad(v.f, v.r, campRes(c)[0]))) || (G.rules.tcMill && TCx && !acted(TCx) && cd(TCx.f, TCx.r, v.f, v.r) === 1 && homeQ(s, v.f, v.r)));
       if (ev > 0.1) push(1.4 + 2 * ev - (gainMove > 0.2 ? 1.8 * gainMove : 0) - (inCrew ? 2.4 : 0), {kind: "gather", cls: cls("gather"), p: v, res});
     }
+  }
+  // trade route: send the nearest free villager to each empty corner
+  if (G.rules.trade && goldWanted(s) && vc >= 4) for (const [cf, cr] of [[0, 7], [7, 0]]) {
+    const on = at(cf, cr); if (on && on.o === s && on.k === "V") continue; if (on) continue;
+    const cand = vills.filter(v => !acted(v) && !isCorner(v.f, v.r)).sort((a, b) => cd(a.f, a.r, cf, cr) - cd(b.f, b.r, cf, cr))[0];
+    if (!cand) continue;
+    const now = cd(cand.f, cand.r, cf, cr); let bm = null, bd = now;
+    for (const t of moves(cand)) { const d = cd(t[0], t[1], cf, cr) + dangerAt(s, t[0], t[1]); if (d < bd) { bd = d; bm = t; } }
+    if (bm) push(3.0 + (cd(bm[0], bm[1], cf, cr) === 0 ? 0.6 : 0) - 0.08 * now, {kind: "move", cls: cls("move", cand), p: cand, to: bm});
   }
   // the Town Center as a home mill
   { const TC = tc(s); if (CR() && G.rules.tcMill && TC && !acted(TC)) { const crew = tcCrew(TC);
@@ -1812,7 +1853,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v99", JSON.stringify(G)); } catch (x) {}
+    try { localStorage.setItem("eightranks-fan-v100", JSON.stringify(G)); } catch (x) {}
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1829,7 +1870,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v99", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v100", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1905,9 +1946,9 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v99", JSON.stringify(G)); } catch (e) {} }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v100", JSON.stringify(G)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v99"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v100"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -1977,6 +2018,8 @@ function renderBoard() {
     <circle cx="${fx - 5}" cy="${fy + 2}" r="6" fill="#3f7d24" stroke="#1e4410"/><circle cx="${fx + 5}" cy="${fy + 2}" r="6" fill="#3f7d24" stroke="#1e4410"/><circle cx="${fx}" cy="${fy - 4}" r="6.5" fill="#4d9230" stroke="#1e4410"/>
     <circle cx="${fx - 4}" cy="${fy - 3}" r="1.7" fill="#d8283a"/><circle cx="${fx + 3}" cy="${fy - 5}" r="1.7" fill="#d8283a"/><circle cx="${fx + 5}" cy="${fy + 2}" r="1.7" fill="#d8283a"/><circle cx="${fx - 5}" cy="${fy + 3}" r="1.7" fill="#d8283a"/><circle cx="${fx}" cy="${fy}" r="1.7" fill="#d8283a"/>
     <rect x="${wx - 1.8}" y="${wy + 3}" width="3.6" height="6" fill="#5b3614"/><path d="M${wx},${wy - 13} L${wx + 8},${wy - 1} H${wx - 8} Z" fill="#2f6b2a" stroke="#163b14"/><path d="M${wx},${wy - 7} L${wx + 9},${wy + 5} H${wx - 9} Z" fill="#2f6b2a" stroke="#163b14"/></g>`);
+  if (G.rules.trade) for (const [f, r] of [[0, 7], [7, 0]]) { const [x, y] = pos(f, r), h = SQS / 2 - 2;
+    g.push(VIEW === "square" ? `<rect x="${x - h}" y="${y - h}" width="${2 * h}" height="${2 * h}" fill="none" stroke="#e7bd52" stroke-width="1.6" stroke-dasharray="3 2" pointer-events="none"/><text x="${x}" y="${y + h - 3}" text-anchor="middle" font-size="7" font-weight="700" fill="#7c5a12" font-family="Alegreya Sans,sans-serif" pointer-events="none">TRADE</text>` : `<polygon points="${diamond(x, y)}" fill="none" stroke="#e7bd52" stroke-width="1.4" stroke-dasharray="3 2" pointer-events="none"/>`); }
   // mine stock
   const [mx, my] = pos(3.5, 3.5);
   for (const [s, dx] of [[0, -9], [1, 9]]) for (let i = 0; i < (G.rules.goldRes ? 0 : G.stock[s]); i++)
@@ -2568,7 +2611,7 @@ document.getElementById("menuBtn").onclick = openMenu;
 document.getElementById("closeMenu").onclick = () => menu.close();
 document.getElementById("startBtn").onclick = () => {
   newGame(menuMode, {pools: false, garrison: false, 
-    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
+    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, homeGold: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
     split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, menuDiff);
   UI = {sel: null, mode: null, msg: "", busy: false};
   document.getElementById("over").classList.remove("show");
@@ -2794,7 +2837,7 @@ function renderIndex() {
       h += `<div class="ix-cell ix-row${cls}" style="--c:${AG[i]}">${c ? stack(c[0], c[1]) + stat(c[2], c[3]) + (k >= 5 ? DEF : "") : ""}</div>`;
     });
   });
-  h += `</div></div><p class="ix-foot">Everything gathers on 4+: home gives food or wood, the fields food, the forest wood; from the Castle Age a villager in the enemy’s home takes gold (hold 2). Food buys people and horses; wood buys buildings, ages and machines. Checker colour shows its price: <span class="ix-sw" style="background:${F}"></span> 1 food on a unit, <span class="ix-sw" style="background:${W}"></span> 1 wood on a building or machine, <span class="ix-sw" style="background:${Gd}"></span> 1 gold. A chess piece adds its own price; ages cost wood. The small shield is building defence: every building has 1.</p>`;
+  h += `</div></div><p class="ix-foot">Everything gathers on 4+: home gives food or wood, the fields food, the forest wood; from the Castle Age a villager in the enemy’s home takes gold, or villagers on both a8 and h1 trade for it (2 actions, 4+), or two at home collect taxes (1 action, 6); hold 2. Food buys people and horses; wood buys buildings, ages and machines. Checker colour shows its price: <span class="ix-sw" style="background:${F}"></span> 1 food on a unit, <span class="ix-sw" style="background:${W}"></span> 1 wood on a building or machine, <span class="ix-sw" style="background:${Gd}"></span> 1 gold. A chess piece adds its own price; ages cost wood. The small shield is building defence: every building has 1.</p>`;
   document.getElementById("treeBody").innerHTML = h;
 }
 
@@ -2809,7 +2852,7 @@ function showBanner(title, sub) {
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
 }
 /* ================= start ================= */
-if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
+if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, homeGold: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
 setView(VIEW); render();
 if (G.winner !== null) finish();
 else if (isAI(G.turn)) runAI();
