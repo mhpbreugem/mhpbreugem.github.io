@@ -439,7 +439,7 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
       <li><b>Food buys people and horses:</b> every chess-piece unit and its checkers. <b>Wood buys the empire:</b> buildings, their checkers, the ages and machines (the trebuchet). Gold is the gold checker.</li>
       <li><b>Everything gathers on 4+.</b> In your home quadrant a villager gathers food or wood, your choice; in the food quadrant a5–d8 food; in the wood quadrant e1–h4 wood. Food and wood hold 0–6 each.</li>
       <li>One mill and one lumber camp, in the fields and the forest only: for one action every villager next to it, standing in the same field or forest, rolls. The Town Center is not a mill.</li>
-      <li><b>Gold</b>: from the Castle Age a villager standing in the <b>opponent’s home quadrant</b> takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with your villagers on both corners a8 and h1, either one trades for one action: one die, 4+ takes one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. If their reserve is empty, the gold checker comes out of their food or wood instead, their choice. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
+      <li><b>Gold</b>: from the Castle Age a villager standing on one of the <b>four centre squares</b> (d4, e4, d5, e5) takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with your villagers on both corners a8 and h1, either one trades for one action: one die, 4+ takes one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. If their reserve is empty, the gold checker comes out of their food or wood instead, their choice. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
     </ul>
     <h3>Ages</h3>
     <ul>
@@ -1200,7 +1200,7 @@ function cornerValue(d) { return d >= 1 && d <= 5 ? (6 - d) / 6 * handYield(d) :
 function squareEV(s, f, r, self) {
   const A = age(s); let best = 0;
   if (A >= 2 && goldSq(s, f, r) && goldAvail(s) && G.gold[s] < goldLimit(s) &&
-      !G.pcs.some(q => q !== self && q.o === s && q.k === "V" && goldSq(s, q.f, q.r))) best = Math.max(best, 1.3);
+      !G.pcs.some(q => q !== self && q.o === s && q.k === "V" && goldSq(s, q.f, q.r))) best = Math.max(best, 2.2);
   const inCrew = (c, x, y) => !G.rules.crewInQuad || inQuad(x, y, campRes(c)[0]);
   for (const c of camps(s)) if (cd(c.f, c.r, f, r) === 1 && inCrew(c, f, r)) {
     const crew = G.pcs.filter(q => q !== self && q.o === s && q.k === "V" && cd(q.f, q.r, c.f, c.r) === 1 && inCrew(c, q.f, q.r)).length;
@@ -1333,6 +1333,17 @@ function aiOptions(s) {
     const now = cd(cand.f, cand.r, cf, cr); let bm = null, bd = now;
     for (const t of moves(cand)) { const d = cd(t[0], t[1], cf, cr) + dangerAt(s, t[0], t[1]); if (d < bd) { bd = d; bm = t; } }
     if (bm) push(3.9 + (cd(bm[0], bm[1], cf, cr) === 0 ? 0.6 : 0) - 0.08 * now, {kind: "move", cls: cls("move", cand), p: cand, to: bm});
+  }
+  // mine route: send the nearest free villager to the centre squares
+  if (!G.rules.raidGold && goldWanted(s) && vc >= 3 && !vills.some(v => isGold(v.f, v.r))) {
+    const sq = []; for (const f of [3, 4]) for (const rr of [3, 4]) if (free(f, rr)) sq.push([f, rr]);
+    const dd = (f, rr) => Math.min(...sq.map(q => cd(f, rr, q[0], q[1])));
+    const cand = sq.length ? vills.filter(v => !acted(v)).sort((a, b) => dd(a.f, a.r) - dd(b.f, b.r))[0] : null;
+    if (cand) {
+      const now = dd(cand.f, cand.r); let bm = null, bd = now;
+      for (const t of moves(cand)) { const d = dd(t[0], t[1]) + dangerAt(s, t[0], t[1]) * 0.7; if (d < bd) { bd = d; bm = t; } }
+      if (bm) push(3.9 + (dd(bm[0], bm[1]) === 0 ? 0.6 : 0) - 0.08 * now, {kind: "move", cls: cls("move", cand), p: cand, to: bm});
+    }
   }
   // the Town Center as a home mill
   { const TC = tc(s); if (CR() && G.rules.tcMill && TC && !acted(TC)) { const crew = tcCrew(TC);
@@ -1902,7 +1913,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v109", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1919,7 +1930,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v109", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1995,7 +2006,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); } catch (e) {} libSave(); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v109", JSON.stringify(G)); } catch (e) {} libSave(); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2036,7 +2047,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v109", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2049,7 +2060,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v108"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v109"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2722,7 +2733,7 @@ document.getElementById("menuBtn").onclick = openMenu;
 document.getElementById("closeMenu").onclick = () => menu.close();
 document.getElementById("startBtn").onclick = () => {
   newGame(menuMode, {pools: false, garrison: false, 
-    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
+    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: false, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
     split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, menuDiff);
   UI = {sel: null, mode: null, msg: "", busy: false};
   document.getElementById("over").classList.remove("show");
@@ -2751,7 +2762,7 @@ const AGE_TIPS = {
       "<b>Stronger buildings</b>: a villager raises a mill, camp or tower to two checkers, 1 wood.",
       "<b>Castle</b>: put the queen on the barracks, 4 wood. It fires 1–2 away. You need it for the Imperial Age.",
       "<b>Trebuchet</b>: once the castle stands, 5 wood. It shoots exactly 3 away and ignores building defence.",
-      "<b>Gold</b> (hold 2): <b>trade</b> with villagers on a8 and h1 (1 action, 4+), or <b>raid</b> with a villager in the enemy home (4+).",
+      "<b>Gold</b> (hold 2): <b>trade</b> with villagers on a8 and h1 (1 action, 4+), or <b>mine</b> with a villager on the centre squares d4, e4, d5, e5 (4+).",
       "<b>Next</b>: Imperial Age costs 4 wood + 1 gold and needs a castle."],
   3: ["<b>Elite units</b>: next to the barracks a unit swaps a checker for gold, 1 gold, +1 attack.",
       "<b>Gold layer</b>: a villager puts gold on a building, 1 gold. Its shots deal 2.",
@@ -2993,7 +3004,7 @@ function showBanner(title, sub) {
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
 }
 /* ================= start ================= */
-if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
+if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: false, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
 setView(VIEW); render();
 if (G.winner !== null) finish();
 else if (isAI(G.turn)) runAI();
