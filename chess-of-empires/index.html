@@ -431,7 +431,7 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
       <li><b>Food buys people and horses:</b> every chess-piece unit and its checkers. <b>Wood buys the empire:</b> buildings, their checkers, the ages and machines (the trebuchet). Gold is the gold checker.</li>
       <li><b>Everything gathers on 4+.</b> In your home quadrant a villager gathers food or wood, your choice; in the food quadrant a5–d8 food; in the wood quadrant e1–h4 wood. Food and wood hold 0–6 each.</li>
       <li>One mill and one lumber camp, in the fields and the forest only: for one action every villager next to it, standing in the same field or forest, rolls. The Town Center is not a mill.</li>
-      <li><b>Gold</b>: from the Castle Age a villager standing in the <b>opponent’s home quadrant</b> takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with your villagers on both corners a8 and h1, either one trades for one action: one die, 4+ takes one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
+      <li><b>Gold</b>: from the Castle Age a villager standing in the <b>opponent’s home quadrant</b> takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with your villagers on both corners a8 and h1, either one trades for one action: one die, 4+ takes one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. If their reserve is empty, the gold checker comes out of their food or wood instead, their choice. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
     </ul>
     <h3>Ages</h3>
     <ul>
@@ -468,6 +468,8 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
   <button class="full" id="closeTree">Close</button></dialog>
 <dialog id="ageDlg"><h2 id="ageTitle"></h2><ul class="agetips" id="ageList"></ul>
   <button class="primary full" id="ageOk">Got it</button><button class="full" id="ageOff" style="font-size:12.5px;min-height:32px">Don't show these tips</button></dialog>
+<dialog id="payDlg"><h2>Pay for the gold</h2><p id="payText" style="font-size:14px"></p>
+  <button class="primary full" id="payFood">1 food</button><button class="primary full" id="payWood">1 wood</button></dialog>
 <dialog id="logDlg"><h2>Game log</h2><div class="fulllog" id="fullLog"></div><button class="full" id="closeLog">Close</button></dialog>
 
 <div class="over" id="over"><div class="card"><h2 id="overTitle"></h2><p id="overText" style="color:var(--dim)"></p><button class="iconbtn" id="overNew" style="margin-top:8px">New game</button></div></div>
@@ -687,7 +689,36 @@ function ageCost(n) {
 // where can side s mine gold: the centre squares, or (raidGold) anywhere in the opponent's home quadrant
 const traderAt = (s, f, r) => G.pcs.find(q => q.o === s && q.k === "V" && q.f === f && q.r === r);
 function tradePartner(p) { if (!G.rules.trade || p.k !== "V" || !isCorner(p.f, p.r)) return null; return traderAt(p.o, 7 - p.f, 7 - p.r) || null; }
-function goldWanted(s) { return age(s) >= 2 && G.gold[s] < goldLimit(s) && GS()[1 - s] > 0 && (age(s) >= 3 || G.gold[s] < 1); }
+function goldAvail(s) { const o = 1 - s; return GS()[o] > 0 || (!!G.rules.goldSupply && G.food[o] + G.wood[o] > 0); }
+const aiSide = o => G.mode === "ai" ? o === 1 : !(G.mode === "hot" || G.mode === "online");
+function goldFrom(s) {   // take one gold checker for s: from the opponent's reserve, else from their food or wood (their choice)
+  const o = 1 - s; if (G.gold[s] >= goldLimit(s)) return 0;
+  if (GS()[o] > 0) { GS()[o]--; G.gold[s]++; return 1; }
+  if (!G.rules.goldSupply || G.food[o] + G.wood[o] <= 0) return 0;
+  G.gold[s]++;
+  if (G.food[o] <= 0) { G.wood[o]--; log(o, "pays the gold with 1 wood (reserve empty)"); }
+  else if (G.wood[o] <= 0) { G.food[o]--; log(o, "pays the gold with 1 food (reserve empty)"); }
+  else if (aiSide(o)) { const res = need(o, FOOD) <= need(o, WOOD) ? FOOD : WOOD; if (res === FOOD) G.food[o]--; else G.wood[o]--; log(o, `pays the gold with 1 ${RES[res]} (reserve empty)`); }
+  else { G.owe = G.owe || [0, 0]; G.owe[o]++; }
+  return 1;
+}
+function payOwe(res) {
+  const o = G.turn; if (!G.owe || !G.owe[o]) return;
+  if (res === FOOD && G.food[o] <= 0) res = WOOD; if (res === WOOD && G.wood[o] <= 0) res = FOOD;
+  if (res === FOOD && G.food[o] > 0) G.food[o]--; else if (res === WOOD && G.wood[o] > 0) G.wood[o]--;
+  G.owe[o]--; log(o, `pays the gold with 1 ${RES[res]} (reserve empty)`);
+  document.getElementById("payDlg").close(); save(); render();
+}
+function checkOwe() {
+  const o = G.turn, d = document.getElementById("payDlg");
+  if (!G.owe || !G.owe[o] || G.winner !== null || d.open) return;
+  if (G.mode === "online" ? o !== NET.side : !(G.mode === "hot" || (G.mode === "ai" && o === 0))) return;
+  if (G.food[o] + G.wood[o] <= 0) { G.owe[o] = 0; return; }
+  if (G.food[o] <= 0 || G.wood[o] <= 0) return payOwe(G.food[o] > 0 ? FOOD : WOOD);
+  document.getElementById("payText").textContent = `${G.mode === "hot" ? SIDE[o] + ": y" : "Y"}our reserve was empty when your opponent took gold, so the checker comes out of your stock. Pay with:`;
+  d.showModal();
+}
+function goldWanted(s) { return age(s) >= 2 && G.gold[s] < goldLimit(s) && goldAvail(s) && (age(s) >= 3 || G.gold[s] < 1); }
 const castleOf = s => barracks(s) || null;   // the barracks, or the castle it becomes
 const atCastle = p => { const c = castleOf(p.o); return !!c && cd(p.f, p.r, c.f, c.r) === 1; };
 function homePartner(p) { if (!G.rules.homeGold || p.k !== "V" || !atCastle(p)) return null; return G.pcs.find(q => q !== p && q.o === p.o && q.k === "V" && !acted(q) && atCastle(q)) || null; }
@@ -746,18 +777,18 @@ function pieceActions(p) {
     }
     if (goldSq(s, p.f, p.r)) {
       const lim = goldLimit(s) - G.gold[s];
-      mk("gather", "Mine gold", G.rules.goldHalf ? "4+ (50%) takes 1" : "5+ takes 1", A >= 2 && GS()[1 - s] > 0 && lim > 0,
-         A < 2 ? "gold opens in the Castle Age" : GS()[1 - s] <= 0 ? (G.rules.goldRes ? "their reserve is empty" : "mine is empty") : (G.rules.gold2 ? "hold 2 gold at most" : "hold 2 at most before the Imperial Age"), {res: "gold"});
+      mk("gather", "Mine gold", G.rules.goldHalf ? "4+ (50%) takes 1" : "5+ takes 1", A >= 2 && goldAvail(s) && lim > 0,
+         A < 2 ? "gold opens in the Castle Age" : !goldAvail(s) ? (G.rules.goldRes ? "their reserve is empty" : "mine is empty") : (G.rules.gold2 ? "hold 2 gold at most" : "hold 2 at most before the Imperial Age"), {res: "gold"});
     }
     if (G.rules.homeGold && atCastle(p)) {
       const q = homePartner(p), lim = goldLimit(s) - G.gold[s];
-      mk("homegold", "Collect taxes", "with a 2nd villager next to the barracks · 1 action · a 6 gives 1 gold", A >= 2 && !!q && GS()[1 - s] > 0 && lim > 0,
-         A < 2 ? "taxation opens in the Castle Age" : !q ? "needs a 2nd free villager next to the barracks" : GS()[1 - s] <= 0 ? "their reserve is empty" : "hold 2 gold at most", {partner: q});
+      mk("homegold", "Collect taxes", "with a 2nd villager next to the barracks · 1 action · a 6 gives 1 gold", A >= 2 && !!q && goldAvail(s) && lim > 0,
+         A < 2 ? "taxation opens in the Castle Age" : !q ? "needs a 2nd free villager next to the barracks" : !goldAvail(s) ? "their reserve is empty" : "hold 2 gold at most", {partner: q});
     }
     if (G.rules.trade && isCorner(p.f, p.r)) {
       const q = tradePartner(p), lim = goldLimit(s) - G.gold[s], other = SQ([7 - p.f, 7 - p.r]);
-      mk("trade", "Trade for gold", `with the villager on ${other} · 1 action · 4+ gives 1 gold`, A >= 2 && !!q && !acted(q) && GS()[1 - s] > 0 && lim > 0,
-         A < 2 ? "trade opens in the Castle Age" : !q ? `needs your villager on ${other} too` : acted(q) ? `the villager on ${other} has acted` : GS()[1 - s] <= 0 ? "their reserve is empty" : "hold 2 gold at most", {partner: q});
+      mk("trade", "Trade for gold", `with the villager on ${other} · 1 action · 4+ gives 1 gold`, A >= 2 && !!q && !acted(q) && goldAvail(s) && lim > 0,
+         A < 2 ? "trade opens in the Castle Age" : !q ? `needs your villager on ${other} too` : acted(q) ? `the villager on ${other} has acted` : !goldAvail(s) ? "their reserve is empty" : "hold 2 gold at most", {partner: q});
     }
     if (!isGold(p.f, p.r) && !(G.rules.raidGold && goldSq(s, p.f, p.r))) for (const [res, d] of gatherOpts(s, p.f, p.r)) {
       const need = effD(s, res, d) + 1, y = handYield(d);
@@ -806,7 +837,7 @@ function pieceActions(p) {
   if (G.rules.pawnGather && p.k === "I") {
     if (goldSq(s, p.f, p.r)) {
       const lim = goldLimit(s) - G.gold[s];
-      mk("gather", "Mine gold", G.rules.goldHalf ? "4+ (50%) takes 1" : "5+ takes 1", A >= 2 && GS()[1 - s] > 0 && lim > 0, A < 2 ? "gold opens in the Castle Age" : "cannot mine now", {res: "gold"});
+      mk("gather", "Mine gold", G.rules.goldHalf ? "4+ (50%) takes 1" : "5+ takes 1", A >= 2 && goldAvail(s) && lim > 0, A < 2 ? "gold opens in the Castle Age" : "cannot mine now", {res: "gold"});
     } else for (const [res, d] of nearCorner(p.f, p.r)) {
       const need = effD(s, res, d) + 1, y = handYield(d);
       mk("gather", `Gather ${RES[res]}`, autoRes(s, res) ? `gives ${y}, no roll` : `${need <= 6 ? need + "+" : "—"} gives ${y}`, d <= 5 && (res === FOOD ? G.food[s] : G.wood[s]) < 6,
@@ -1020,7 +1051,7 @@ function exec(a) {
     case "gather": {
       const x = roll(); G.acted.push(p.id); G.last = [[p.f, p.r]];
       if (a.res === "gold") {
-        if (x >= (G.rules.goldHalf ? 4 : 5)) { const n = Math.min(1, GS()[1 - s], goldLimit(s) - G.gold[s]); GS()[1 - s] -= n; G.gold[s] += n; text = `mines gold: rolls ${x}, +${n} gold`; }
+        if (x >= (G.rules.goldHalf ? 4 : 5)) { const n = goldFrom(s); text = `mines gold: rolls ${x}, +${n} gold`; }
         else text = `mines gold: rolls ${x}, nothing`;
       } else {
         const d = gatherOpts(s, p.f, p.r).find(z => z[0] === a.res)[1];
@@ -1114,14 +1145,14 @@ function exec(a) {
     case "homegold": {
       const q = a.partner || homePartner(p), x = roll();
       G.acted.push(p.id); if (q) G.acted.push(q.id); G.last = [[p.f, p.r]].concat(q ? [[q.f, q.r]] : []);
-      if (x === 6) { const n = Math.min(1, GS()[1 - s], goldLimit(s) - G.gold[s]); GS()[1 - s] -= n; G.gold[s] += n; text = `collects taxes: rolls 6, +${n} gold`; }
+      if (x === 6) { const n = goldFrom(s); text = `collects taxes: rolls 6, +${n} gold`; }
       else text = `collects taxes: rolls ${x}, nothing (needs a 6)`;
       UI.msg = diceMsg([x], text); break;
     }
     case "trade": {
       const q = a.partner || tradePartner(p), x = roll();
       G.acted.push(p.id); if (q) G.acted.push(q.id); G.last = [[p.f, p.r]].concat(q ? [[q.f, q.r]] : []);
-      if (x >= 4) { const n = Math.min(1, GS()[1 - s], goldLimit(s) - G.gold[s]); GS()[1 - s] -= n; G.gold[s] += n; text = `trades between a8 and h1: rolls ${x}, +${n} gold`; }
+      if (x >= 4) { const n = goldFrom(s); text = `trades between a8 and h1: rolls ${x}, +${n} gold`; }
       else text = `trades between a8 and h1: rolls ${x}, nothing`;
       UI.msg = diceMsg([x], text); break;
     }
@@ -1159,7 +1190,7 @@ function need(s, res) {
 function cornerValue(d) { return d >= 1 && d <= 5 ? (6 - d) / 6 * handYield(d) : d > 5 ? 0.06 * (9 - d) : 0; }
 function squareEV(s, f, r, self) {
   const A = age(s); let best = 0;
-  if (A >= 2 && goldSq(s, f, r) && GS()[1 - s] > 0 && G.gold[s] < goldLimit(s) &&
+  if (A >= 2 && goldSq(s, f, r) && goldAvail(s) && G.gold[s] < goldLimit(s) &&
       !G.pcs.some(q => q !== self && q.o === s && q.k === "V" && goldSq(s, q.f, q.r))) best = Math.max(best, 1.3);
   const inCrew = (c, x, y) => !G.rules.crewInQuad || inQuad(x, y, campRes(c)[0]);
   for (const c of camps(s)) if (cd(c.f, c.r, f, r) === 1 && inCrew(c, f, r)) {
@@ -1278,7 +1309,7 @@ function aiOptions(s) {
     }
     if (best && (gainMove > 0.04 || invest > 0)) push(1 + 2.4 * Math.max(0, gainMove) + invest, {kind: "move", cls: cls("move", v), p: v, to: best});
     // gather
-    if (goldSq(s, v.f, v.r) && A >= 2 && GS()[1 - s] > 0 && G.gold[s] < goldLimit(s)) push(3.8, {kind: "gather", cls: cls("gather"), p: v, res: "gold"});
+    if (goldSq(s, v.f, v.r) && A >= 2 && goldAvail(s) && G.gold[s] < goldLimit(s)) push(3.8, {kind: "gather", cls: cls("gather"), p: v, res: "gold"});
     for (const [res, d] of gatherOpts(s, v.f, v.r)) if (d <= 5) {
       const ev = (6 - d) / 6 * handYield(d) * need(s, res);
       const TCx = tc(s), inCrew = !!FX.crew && (camps(s).some(c => !acted(c) && cd(c.f, c.r, v.f, v.r) === 1 && (!G.rules.crewInQuad || inQuad(v.f, v.r, campRes(c)[0]))) || (G.rules.tcMill && TCx && !acted(TCx) && cd(TCx.f, TCx.r, v.f, v.r) === 1 && homeQ(s, v.f, v.r)));
@@ -1565,7 +1596,7 @@ function pieceValue(p) {
 }
 function prodEV(s, v) {
   let best = 0;
-  if (age(s) >= 2 && isGold(v.f, v.r) && GS()[1 - s] > 0 && G.gold[s] < goldLimit(s)) best = 0.6;
+  if (age(s) >= 2 && isGold(v.f, v.r) && goldAvail(s) && G.gold[s] < goldLimit(s)) best = 0.6;
   for (const [res, d] of nearCorner(v.f, v.r)) if (d >= 1 && d <= 5) best = Math.max(best, (6 - d) / 6 * handYield(d) * (res === FOOD ? (G.food[s] >= 6 ? 0.1 : 1) : (G.wood[s] >= 6 ? 0.1 : 1)));
   for (const c of camps(s)) if (cd(c.f, c.r, v.f, v.r) === 1) best = Math.max(best, (6 - campRes(c)[1]) / 6 * 0.9);
   return best;
@@ -1862,7 +1893,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v104", JSON.stringify(G)); } catch (x) {}
+    try { localStorage.setItem("eightranks-fan-v105", JSON.stringify(G)); } catch (x) {}
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1879,7 +1910,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v104", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v105", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1955,9 +1986,9 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v104", JSON.stringify(G)); } catch (e) {} }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v105", JSON.stringify(G)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v104"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v105"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2468,6 +2499,7 @@ function renderLog() {
   document.getElementById("log").innerHTML = L.map(e => `<div>${e.s === null ? "" : (e.s ? "● " : "○ ")}r${e.r} ${e.s === null ? "" : SIDE[e.s]} ${e.t}</div>`).join("");
 }
 function render() {
+  setTimeout(() => { try { checkOwe(); } catch (e) {} }, 0);
   renderStatus(); renderBoard(); if (VIEW === "3d") render3D(); renderStrips(); renderPlayers(); if (typeof autoLabel === "function") autoLabel(); renderPanel(); renderLog();
   const endB = document.getElementById("endBtn");
   endB.disabled = UI.busy || G.winner !== null || isAI(G.turn) || remote(G.turn);
@@ -2620,7 +2652,7 @@ document.getElementById("menuBtn").onclick = openMenu;
 document.getElementById("closeMenu").onclick = () => menu.close();
 document.getElementById("startBtn").onclick = () => {
   newGame(menuMode, {pools: false, garrison: false, 
-    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
+    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
     split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, menuDiff);
   UI = {sel: null, mode: null, msg: "", busy: false};
   document.getElementById("over").classList.remove("show");
@@ -2636,6 +2668,9 @@ document.getElementById("logBtn").onclick = () => {
   logDlg.showModal();
 };
 document.getElementById("closeLog").onclick = () => logDlg.close();
+document.getElementById("payFood").onclick = () => payOwe(FOOD);
+document.getElementById("payWood").onclick = () => payOwe(WOOD);
+document.getElementById("payDlg").addEventListener("cancel", e => e.preventDefault());
 /* ================= new-age tips ================= */
 const AGE_TIPS = {
   1: ["<b>Barracks</b>: a villager builds one in your home quadrant, 2 wood. You need it for the Castle Age.",
@@ -2887,7 +2922,7 @@ function showBanner(title, sub) {
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
 }
 /* ================= start ================= */
-if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
+if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
 setView(VIEW); render();
 if (G.winner !== null) finish();
 else if (isAI(G.turn)) runAI();
