@@ -439,7 +439,7 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
       <li><b>Food buys people and horses:</b> every chess-piece unit and its checkers. <b>Wood buys the empire:</b> buildings, their checkers, the ages and machines (the trebuchet). Gold is the gold checker.</li>
       <li><b>Everything gathers on 4+.</b> In your home quadrant a villager gathers food or wood, your choice; in the food quadrant a5–d8 food; in the wood quadrant e1–h4 wood. Food and wood hold 0–6 each.</li>
       <li>One mill and one lumber camp, in the fields and the forest only: for one action every villager next to it, standing in the same field or forest, rolls. The Town Center is not a mill.</li>
-      <li><b>Gold</b>: from the Castle Age a villager standing on one of the <b>four centre squares</b> (d4, e4, d5, e5) takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with your villagers on both corners a8 and h1, either one buys gold for one action: pay 6 food or wood (any mix, no dice) and take one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. If their reserve is empty, the gold checker comes out of their food or wood instead, their choice. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
+      <li><b>Gold</b>: from the Castle Age a villager standing on one of the <b>four centre squares</b> (d4, e4, d5, e5) takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with a villager on a8 (food post) or h1 (wood post), buy gold for one action: pay 6 of that resource, or 6 in any mix if you hold both posts (no dice) and take one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. If their reserve is empty, the gold checker comes out of their food or wood instead, their choice. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
     </ul>
     <h3>Ages</h3>
     <ul>
@@ -697,6 +697,8 @@ function ageCost(n) {
 }
 // where can side s mine gold: the centre squares, or (raidGold) anywhere in the opponent's home quadrant
 const traderAt = (s, f, r) => G.pcs.find(q => q.o === s && q.k === "V" && q.f === f && q.r === r);
+const postRes = p => p.f === 0 ? FOOD : WOOD;   // a8 is the food post, h1 the wood post
+function tradeStock(p) { const q = tradePartner(p), mix = !!q && !acted(q), o = p.o; return {q: mix ? q : null, n: mix ? G.food[o] + G.wood[o] : (postRes(p) === FOOD ? G.food[o] : G.wood[o])}; }
 function tradePartner(p) { if (!G.rules.trade || p.k !== "V" || !isCorner(p.f, p.r)) return null; return traderAt(p.o, 7 - p.f, 7 - p.r) || null; }
 function goldAvail(s) { const o = 1 - s; return GS()[o] > 0 || (!!G.rules.goldSupply && G.food[o] + G.wood[o] > 0); }
 const aiSide = o => G.mode === "ai" ? o === 1 : !(G.mode === "hot" || G.mode === "online");
@@ -789,9 +791,10 @@ function pieceActions(p) {
          A < 2 ? "gold opens in the Castle Age" : !goldAvail(s) ? (G.rules.goldRes ? "their reserve is empty" : "mine is empty") : (G.rules.gold2 ? "hold 2 gold at most" : "hold 2 at most before the Imperial Age"), {res: "gold"});
     }
     if (G.rules.trade && isCorner(p.f, p.r)) {
-      const q = tradePartner(p), lim = goldLimit(s) - G.gold[s], other = SQ([7 - p.f, 7 - p.r]);
-      mk("trade", "Buy gold", `with the villager on ${other} · 1 action · pay 6 food/wood, no dice`, A >= 2 && !!q && !acted(q) && G.food[s] + G.wood[s] >= 6 && goldAvail(s) && lim > 0,
-         A < 2 ? "trade opens in the Castle Age" : !q ? `needs your villager on ${other} too` : acted(q) ? `the villager on ${other} has acted` : G.food[s] + G.wood[s] < 6 ? "needs 6 food and wood together" : !goldAvail(s) ? "their reserve is empty" : "hold 2 gold at most", {partner: q});
+      const st = tradeStock(p), lim = goldLimit(s) - G.gold[s], other = SQ([7 - p.f, 7 - p.r]), nm = RES[postRes(p)];
+      mk("trade", "Buy gold", st.q ? "6 food/wood in any mix (villagers on both posts) · 1 action · no dice" : `pay 6 ${nm} (a villager on ${other} too allows a mix) · 1 action · no dice`,
+         A >= 2 && st.n >= 6 && goldAvail(s) && lim > 0,
+         A < 2 ? "trade opens in the Castle Age" : st.n < 6 ? (st.q ? "needs 6 food and wood together" : `needs 6 ${nm}`) : !goldAvail(s) ? "their reserve is empty" : "hold 2 gold at most", {partner: st.q});
     }
     if (!isGold(p.f, p.r) && !(G.rules.raidGold && goldSq(s, p.f, p.r))) for (const [res, d] of gatherOpts(s, p.f, p.r)) {
       const need = effD(s, res, d) + 1, y = handYield(d);
@@ -1146,8 +1149,9 @@ function exec(a) {
     case "crown": { const b = a.target, q = b.k === "B", was = name(b); pay(s, 0, CROWNW(q), CROWNG(q)); b.cr = true; G.acted.push(p.id); G.last = [[b.f, b.r]];
       G.crowns = G.crowns || {B: 0, camp: 0}; G.crowns[b.k]++; text = q ? "puts the queen on the barracks: now a castle" : `puts a rook on the ${was}: now a watch tower`; break; }
     case "trade": {
-      const q = a.partner || tradePartner(p); let f = 0, w = 0;
-      for (let i = 0; i < 6; i++) { if (G.food[s] - f >= G.wood[s] - w) f++; else w++; }   // pays from the larger stock first
+      const q = a.partner || null; let f = 0, w = 0;
+      if (q) for (let i = 0; i < 6; i++) { if (G.food[s] - f >= G.wood[s] - w) f++; else w++; }   // a mix: pays from the larger stock first
+      else if (postRes(p) === FOOD) f = 6; else w = 6;
       G.acted.push(p.id); if (q) G.acted.push(q.id); G.last = [[p.f, p.r]].concat(q ? [[q.f, q.r]] : []);
       pay(s, f, w, 0); const n = goldFrom(s);
       text = `buys gold at the trade posts: ${f} food + ${w} wood for ${n} gold`; break;
@@ -1290,7 +1294,7 @@ function aiOptions(s) {
       if (G.rules.prices2 && !G.rules.milFlex ? G.food[s] >= 1 : milPay(s)) cand.push(["I", 0.2]);
       for (const [k, b] of cand) push(base + b, {kind: "recruit", cls: cls("recruit"), p: v, k});
     }
-    if (G.rules.trade && goldWanted(s) && isCorner(v.f, v.r)) { const q = tradePartner(v); if (q && !acted(q) && G.food[v.o] + G.wood[v.o] >= 6) push(6.5 - dangerAt(s, v.f, v.r) * 0.6, {kind: "trade", cls: cls("trade", v), p: v, partner: q}); }
+    if (G.rules.trade && goldWanted(s) && isCorner(v.f, v.r)) { const st = tradeStock(v); if (st.n >= 6) push(6.5 - dangerAt(s, v.f, v.r) * 0.6, {kind: "trade", cls: cls("trade", v), p: v, partner: st.q}); }
     // move villager (computed first: gathering far away is poor if a better square is one move off)
     const here = squareEV(s, v.f, v.r, v); let best = null, bv = -9;
     for (const t of moves(v)) { const e = squareEV(s, t[0], t[1], v); if (e > bv) { bv = e; best = t; } }
@@ -1898,7 +1902,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v110", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v111", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1915,7 +1919,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v110", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v111", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1991,7 +1995,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v110", JSON.stringify(G)); } catch (e) {} libSave(); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v111", JSON.stringify(G)); } catch (e) {} libSave(); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2032,7 +2036,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v110", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v111", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2045,7 +2049,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v110"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v111"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2747,7 +2751,7 @@ const AGE_TIPS = {
       "<b>Stronger buildings</b>: a villager raises a mill, camp or tower to two checkers, 1 wood.",
       "<b>Castle</b>: put the queen on the barracks, 4 wood. It fires 1–2 away. You need it for the Imperial Age.",
       "<b>Trebuchet</b>: once the castle stands, 5 wood. It shoots exactly 3 away and ignores building defence.",
-      "<b>Gold</b> (hold 2): <b>buy</b> it with villagers on a8 and h1 (1 action, pay 6 food/wood), or <b>mine</b> with a villager on the centre squares d4, e4, d5, e5 (4+).",
+      "<b>Gold</b> (hold 2): <b>buy</b> it with villagers on a8 and h1 (1 action: 6 of that post’s resource, any mix with both), or <b>mine</b> with a villager on the centre squares d4, e4, d5, e5 (4+).",
       "<b>Next</b>: Imperial Age costs 4 wood + 1 gold and needs a castle."],
   3: ["<b>Elite units</b>: next to the barracks a unit swaps a checker for gold, 1 gold, +1 attack.",
       "<b>Gold layer</b>: a villager puts gold on a building, 1 gold. Its shots deal 2.",
