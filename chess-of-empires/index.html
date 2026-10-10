@@ -1902,7 +1902,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v112", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v113", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1919,7 +1919,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v112", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v113", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1995,7 +1995,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v112", JSON.stringify(G)); } catch (e) {} libSave(); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v113", JSON.stringify(G)); } catch (e) {} libSave(); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2036,7 +2036,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v112", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v113", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2049,7 +2049,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v112"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v113"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2156,19 +2156,15 @@ function rockSmall(f, r) {   // a few stones on a single rock square
   }
   return t + `</g>`;
 }
-function goldMine() {   // the gold mine over d4, e4, d5, e5: dark rock rim, golden floor, ore nuggets
+function goldMine() {   // the gold mine: solid gold squares, a sparkle on each corner, a nugget in the middle (flat, walkable)
   const c = [[3, 3], [4, 3], [3, 4], [4, 4]].map(([f, r]) => pos(f, r));
   const cx = c.reduce((a, p) => a + p[0], 0) / 4, cy = c.reduce((a, p) => a + p[1], 0) / 4;
   const sq = VIEW === "square", u = sq ? SQS / 2 : HX * 0.95, k = sq ? 1 : HY / HX;
-  const ring = (rx, ry, n, seed, w) => { let d = ""; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, j = 1 + 0.07 * Math.sin(i * 2.3 + seed) + 0.04 * Math.cos(i * 4.1 + seed); d += (i ? "L" : "M") + (cx + Math.cos(a) * rx * j).toFixed(1) + "," + (cy + Math.sin(a) * ry * j * k).toFixed(1); } return d + "Z"; };
-  let t = `<g pointer-events="none"><ellipse cx="${cx}" cy="${cy + 2}" rx="${u * 2.05}" ry="${u * 1.9 * k}" fill="#2b2118" fill-opacity="0.22"/>`;
-  t += `<path d="${ring(u * 1.95, u * 1.8, 26, 1)}" fill="#5a4a38" stroke="#2f261c" stroke-width="1.2"/>`;
-  t += `<path d="${ring(u * 1.7, u * 1.55, 26, 2)}" fill="#e9c24d" stroke="#b8860b" stroke-width="1"/>`;
-  t += `<path d="${ring(u * 1.45, u * 1.3, 22, 3)}" fill="#f3d878" fill-opacity="0.55"/>`;
-  for (const [dx, dy, sz] of [[-1.15, -0.8, 0.2], [0.9, -1.0, 0.16], [1.2, 0.55, 0.22], [-0.7, 1.1, 0.17], [0.2, 1.3, 0.14], [-1.3, 0.3, 0.14], [0.1, -1.35, 0.15]]) {
-    const x = cx + dx * u, y = cy + dy * u * k, z = sz * u;
-    t += `<polygon points="${x},${y - z * k} ${x + z},${y} ${x},${y + z * k} ${x - z},${y}" fill="#fff0a0" stroke="#a87408" stroke-width="0.9"/>`;
-  }
+  let t = `<g pointer-events="none">`;
+  for (const [dx, dy] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) { const x = cx + dx * u, y = cy + dy * u * k;
+    t += `<path d="M${x},${y - u * .3 * k} L${x + u * .08},${y - u * .08 * k} L${x + u * .3},${y} L${x + u * .08},${y + u * .08 * k} L${x},${y + u * .3 * k} L${x - u * .08},${y + u * .08 * k} L${x - u * .3},${y} L${x - u * .08},${y - u * .08 * k}Z" fill="#fff4b8" stroke="#b8860b" stroke-width=".7"/>`; }
+  const z = u * .14;
+  t += `<polygon points="${cx},${cy - z * k} ${cx + z},${cy} ${cx},${cy + z * k} ${cx - z},${cy}" fill="#ffe98a" stroke="#a87408" stroke-width=".7"/>`;
   return t + `</g>`;
 }
 function rockOutcrop() {   // one outcrop over d4, e4, d5, e5
