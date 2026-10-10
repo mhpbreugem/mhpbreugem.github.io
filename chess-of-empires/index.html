@@ -371,9 +371,9 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
     <button data-m="hot">Two players</button>
     <button data-m="watch">Computer vs computer</button>
     <button data-m="online">Online: two phones</button>
-    <button data-m="link">By link: play anytime</button>
+    <button data-m="link">Anytime: two phones</button>
   </div>
-  <div id="linkBox" style="display:none"><p class="onote">Two phones, no account, nobody has to be online together. You play White: make your move, end your turn and tap “Send my turn” to message the link. Your opponent opens it whenever they like, plays Black and sends a link back. Every turn is one link; the game is saved on both phones.</p></div>
+  <div id="linkBox" style="display:none"><p class="onote">Two phones, no account, nobody has to be online together. You play White and send the invite link once. After that each turn is saved online and appears on the other phone when it opens the game. If the online store cannot be reached, a turn can still be sent as a link.</p></div>
   <div id="onlineBox" style="display:none">
     <p class="onote">Two phones, no account needed. One phone creates a game (and plays White) and sends the invite link or the 4-letter code; the other opens the link, or types the code here.</p>
     <div class="netjoin"><input id="joinCode" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="CODE" aria-label="Game code"><button id="joinBtn">Join as Black</button></div>
@@ -1905,7 +1905,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1922,7 +1922,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -2008,7 +2008,7 @@ async function linkDecode(str) {
   let b = unb64u(str.slice(1));
   if (str[0] === "z") { const ds = new DecompressionStream("deflate-raw"), w = ds.writable.getWriter(); w.write(b); w.close(); b = new Uint8Array(await new Response(ds.readable).arrayBuffer()); }
   const d = JSON.parse(new TextDecoder().decode(b));
-  if (!d || !/^[A-Z]{4}$/.test(d.c) || (d.s !== 0 && d.s !== 1) || !d.g || !Array.isArray(d.g.pcs) || typeof d.g.turn !== "number") throw new Error("bad");
+  if (!d || !/^[A-Za-z0-9]{4,40}$/.test(d.c) || (d.s !== 0 && d.s !== 1) || !d.g || !Array.isArray(d.g.pcs) || typeof d.g.turn !== "number") throw new Error("bad");
   return d;
 }
 async function linkSend() {
@@ -2042,13 +2042,103 @@ async function linkOpen() {
   save(); render(); if (G.winner !== null) finish();
   if (G.turn === mine && navigator.vibrate) try { navigator.vibrate(120); } catch (e) {}
 }
-window.addEventListener("hashchange", linkOpen);
+window.addEventListener("hashchange", () => { linkOpen(); cloudJoinHash(); });
+/* ================= anytime games: the game is kept in a public online store (jsonblob.com), nobody has to be online together ================= */
+const BLOB = "https://jsonblob.com/api/jsonBlob";
+const cloudOn = () => byLink() && !!G.net.blob;
+const cloudKey = () => linkP(G) + "|" + G.winner;
+const shortCode = c => String(c || "").slice(-4).toUpperCase();
+function cloudBody() { const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60); return JSON.stringify({app: "coe", p: linkP(G), s: G.net.side, g}); }
+function cloudStore() { try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (e) {} libSave(); }
+let cloudBusy = false;
+async function cloudPush() {
+  if (!cloudOn() || SIM || cloudBusy) return;
+  const net = G.net, key = cloudKey();
+  if (net.sentKey === key || (G.turn === net.side && G.winner === null)) return;   // only a finished turn (or the end of the game) is sent
+  cloudBusy = true;
+  try {
+    const r = await fetch(BLOB + "/" + net.blob, {method: "PUT", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: cloudBody()});
+    if (!r.ok) throw new Error(r.status);
+    if (G.net === net) { net.sentKey = key; net.pending = false; NET.err = ""; cloudStore(); }
+  } catch (e) { if (G.net === net) { net.pending = true; NET.err = "Your turn is not sent yet (no connection). It is retried automatically, or send it by link."; } }
+  cloudBusy = false; render();
+}
+async function cloudPoll() {
+  if (!G || !cloudOn() || SIM || document.hidden) return;
+  if (G.net.pending || (G.net.sentKey !== cloudKey() && G.turn !== G.net.side)) return cloudPush();
+  if (!remote(G.turn) && G.winner === null) return;   // my turn: nothing to fetch
+  const net = G.net;
+  try {
+    const r = await fetch(BLOB + "/" + net.blob, {headers: {"Accept": "application/json"}, cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    if (G.net !== net || !d || !d.g || !Array.isArray(d.g.pcs)) return;
+    if (NET.err && !net.pending) NET.err = "";
+    const newer = d.p > linkP(G) || (d.g.winner !== null && d.g.winner !== undefined && G.winner === null);
+    if (!newer) return;
+    G = d.g; G.mode = "online"; G.net = net; net.sentKey = cloudKey();
+    UI = {sel: null, mode: null, busy: false, msg: G.winner !== null ? "The game is over." : G.turn === net.side ? `${SIDE[d.s]} has played. Your move.` : ""};
+    cloudStore(); document.getElementById("over").classList.remove("show");
+    render(); if (G.winner !== null) finish();
+    if (G.turn === net.side && navigator.vibrate) try { navigator.vibrate(120); } catch (e) {}
+  } catch (e) {}
+}
+setInterval(cloudPoll, 8000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) cloudPoll(); });
+const inviteLink = id => (onWeb() ? location.origin + location.pathname : WEB) + "#play=" + id;
+async function cloudInvite() {
+  if (!cloudOn()) return;
+  const url = inviteLink(G.net.blob), text = "Play Chess of Empires with me. Open this link; we each play when we have time:";
+  try { if (navigator.share) { await navigator.share({title: "Chess of Empires", text, url}); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(text + " " + url); UI.msg = "Invite link copied. Paste it into a message to your opponent."; }
+  catch (e) { UI.msg = `Send this invite link: <b style="user-select:all;-webkit-user-select:all;word-break:break-all">${url}</b>`; }
+  render();
+}
+async function cloudCreate() {
+  linkCreate(); const g0 = G;
+  UI.msg = "Setting up the game online…"; render();
+  let id = null;
+  try {
+    const r = await fetch(BLOB, {method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"}, body: cloudBody()});
+    const loc = r.headers.get("Location") || "";
+    id = (/jsonBlob\/([A-Za-z0-9-]+)/.exec(loc) || [])[1] || r.headers.get("X-jsonblob-id") || null;
+    if (!r.ok) id = null;
+  } catch (e) { id = null; }
+  if (G !== g0) return;
+  if (!id) { UI.msg = "The online store could not be reached, so this game runs by link: after each turn tap <b>Send my turn</b>."; return render(); }
+  const old = gameId(); G.net.blob = id; G.net.code = id; G.net.sentKey = ""; NET.code = id;
+  try { const lib = libGet(); delete lib[old]; libPut(lib); } catch (e) {}
+  UI.msg = `Game ready. Invite your opponent once; after that every turn is saved online, nobody needs to be online together.<div class="acts" style="margin-top:6px"><button id="inviteBtn" class="primary">Share invite link</button></div>`;
+  save(); render();
+}
+async function cloudJoin(id) {
+  const lib = libGet();
+  for (const sd of [1, 0]) if (lib["on-" + id + "-" + sd]) { if (!G || gameId() !== "on-" + id + "-" + sd) libOpen("on-" + id + "-" + sd); cloudPoll(); return; }
+  UI.msg = "Opening the game…"; render();
+  try {
+    const r = await fetch(BLOB + "/" + id, {headers: {"Accept": "application/json"}, cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json(); if (!d || !d.g || !Array.isArray(d.g.pcs) || (d.s !== 0 && d.s !== 1)) throw new Error("bad");
+    if (G) save(); netLeave(); clearTimeout(autoT);
+    const mine = 1 - d.s; G = d.g; G.mode = "online"; G.net = {code: id, blob: id, side: mine, v: 0, met: true, async: true, sentKey: ""};
+    G.net.sentKey = cloudKey();
+    Object.assign(NET, {code: id, side: mine, v: 0, black: true, ready: false});
+    UI = {sel: null, mode: null, busy: false, msg: `You play ${SIDE[mine]}. ` + (G.turn === mine ? "Your move." : `Waiting for ${SIDE[G.turn]}; their move appears here.`)};
+    document.getElementById("over").classList.remove("show"); if (menu.open) menu.close();
+    cloudStore(); render(); if (G.winner !== null) finish();
+  } catch (e) { UI.msg = "This game could not be opened (no connection, or the invite is no longer valid)."; render(); }
+}
+function cloudJoinHash() {
+  const m = /[#&]play=([A-Za-z0-9-]{6,40})/.exec(location.hash || ""); if (!m) return;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  cloudJoin(m[1]);
+}
 document.getElementById("joinBtn").addEventListener("click", () => netJoin(document.getElementById("joinCode").value));
 document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key === "Enter") netJoin(e.target.value); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); } catch (e) {} libSave(); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2063,7 +2153,7 @@ function libSave() {
 }
 function libLabel(g) {
   const side = g.net ? g.net.side : 0, mine = g.mode === "online" ? side : g.mode === "ai" ? 0 : null;
-  const what = g.mode === "ai" ? "Against the computer" : g.mode === "hot" ? "Two players, one phone" : g.mode === "watch" ? "Computer vs computer" : `${g.net && g.net.async ? "By link" : "Online"} ${g.net ? g.net.code : ""} · you play ${SIDE[side]}`;
+  const what = g.mode === "ai" ? "Against the computer" : g.mode === "hot" ? "Two players, one phone" : g.mode === "watch" ? "Computer vs computer" : `${g.net && g.net.blob ? "Anytime" : g.net && g.net.async ? "By link" : "Online"} ${g.net ? shortCode(g.net.code) : ""} · you play ${SIDE[side]}`;
   const map = g.rules && g.rules.rockMap ? ` · ${g.rules.rockMap}` : "";
   const state = g.winner !== null && g.winner !== undefined ? (g.winner === -1 ? "draw" : mine === null ? `${SIDE[g.winner]} won` : g.winner === mine ? "you won" : "you lost")
     : `round ${g.round}` + (mine !== null && g.turn === mine ? " · your turn" : "");
@@ -2089,7 +2179,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2102,7 +2192,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v115"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v116"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2550,12 +2640,13 @@ function renderPlayers() {
 function renderPanel() {
   const el = document.getElementById("panel");
   const msg = UI.msg ? `<div class="msg">${UI.msg}</div>` : "";
-  if (G.winner !== null) { el.innerHTML = `<div class="ptitle">Game over</div>${msg}${byLink() ? `<div class="acts" style="margin:6px 0"><button id="sendTurnBtn" class="primary">Send the result</button></div>` : ""}`; return; }
+  if (G.winner !== null) { el.innerHTML = `<div class="ptitle">Game over</div>${msg}${byLink() && !cloudOn() ? `<div class="acts" style="margin:6px 0"><button id="sendTurnBtn" class="primary">Send the result</button></div>` : ""}`; return; }
   if (G.mode === "online" && !UI.sel && (remote(G.turn) || NET.err)) {
     const code = NET.code || (G.net ? G.net.code : "");
     let title, body;
     if (!NET.black && NET.side === 0) { title = "Waiting for your opponent"; body = `Game code <b style="font-size:17px;letter-spacing:.12em">${code}</b>. Your opponent opens <b style="user-select:all;-webkit-user-select:all;word-break:break-all">${netLink(code)}</b> on their phone and plays Black, or opens the game and types the code under Game › Online. No account needed.<div class="acts" style="margin-top:6px"><button id="shareBtn" class="primary">Share invite link</button></div>`; }
     else if (!NET.black) { title = "Joining game " + code; body = "Connecting to the other phone…"; }
+    else if (cloudOn()) { title = "Opponent's turn"; body = `You play ${SIDE[NET.side]} · game ${shortCode(code)}. Your turn ${G.net.pending ? "is waiting to be sent" : "is saved online"}; their move appears here when they have played (also when you reopen the game).<div class="acts" style="margin-top:6px">${NET.side === 0 ? `<button id="inviteBtn">Share invite link</button>` : ""}<button id="sendTurnBtn">Send my turn by link</button></div>`; }
     else if (byLink()) { title = "Opponent's turn"; body = `You play ${SIDE[NET.side]} · game ${code}. Send your opponent the link: they open it when they have time, play their turn and send one back. This game is saved on this phone.<div class="acts" style="margin-top:6px"><button id="sendTurnBtn" class="primary">Send my turn</button></div>`; }
     else if (remote(G.turn)) { title = "Opponent's turn"; body = `You play ${SIDE[NET.side]} · game ${code}${NET.linked ? "" : " · <b>opponent offline</b>"}. Their moves appear here as they make them; tap any piece to see its details.${NET.linked ? "" : `<div class="acts" style="margin-top:6px"><button id="sendTurnBtn">Send my turn by link instead</button></div>`}`; }
     else { title = "Your move"; body = ""; }
@@ -2643,6 +2734,7 @@ function render() {
   endB.textContent = G.mode === "online" ? (remote(G.turn) ? (NET.black ? "Opponent's turn" : "Waiting for a player") : "End turn") : G.mode === "watch" ? `Next turn: ${SIDE[G.turn]} ▶` : G.mode === "hot" ? `End ${SIDE[G.turn]}'s turn` : "End turn";
 }
 function finish() {
+  if (cloudOn()) setTimeout(cloudPush, 0);
   render();
   const o = document.getElementById("over");
   const t = G.winner === -1 ? "Draw" : (G.mode === "ai" || G.mode === "online") ? (G.winner === (G.mode === "online" ? NET.side : 0) ? "Victory!" : "Defeat") : `${SIDE[G.winner]} is victorious`;
@@ -2721,6 +2813,7 @@ document.getElementById("panel").addEventListener("click", e => {
   if (b.id === "cancelMode") { UI.mode = null; return render(); }
   if (b.id === "shareBtn") return netShare();
   if (b.id === "sendTurnBtn") return linkSend();
+  if (b.id === "inviteBtn") return cloudInvite();
   if (b.dataset.act !== undefined) return chooseAction(+b.dataset.act);
   if (b.dataset.partner !== undefined) {
     const m = UI.mode, id = +b.dataset.partner;
@@ -2775,7 +2868,7 @@ function segUpdate() {
   document.getElementById("diffSeg").style.display = menuMode === "ai" || menuMode === "watch" ? "flex" : "none";
   document.getElementById("onlineBox").style.display = menuMode === "online" ? "" : "none";
   document.getElementById("linkBox").style.display = menuMode === "link" ? "" : "none";
-  document.getElementById("startBtn").textContent = menuMode === "online" ? "Create online game (you play White)" : menuMode === "link" ? "Create game by link (you play White)" : "Start new game";
+  document.getElementById("startBtn").textContent = menuMode === "online" ? "Create online game (you play White)" : menuMode === "link" ? "Create anytime game (you play White)" : "Start new game";
   document.querySelectorAll("#castleSeg button").forEach(b => b.classList.toggle("on", b.dataset.c === menuCastle));
   document.querySelectorAll("#viewSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === VIEW));
   document.querySelectorAll("#ckSeg button").forEach(b => b.classList.toggle("on", b.dataset.c === CKV));
@@ -2795,7 +2888,7 @@ document.getElementById("startBtn").onclick = () => {
     split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, menuDiff);
   UI = {sel: null, mode: null, msg: "", busy: false};
   document.getElementById("over").classList.remove("show");
-  if (menuMode === "link") linkCreate(); else if (menuMode === "online") netCreate(); else netLeave();
+  if (menuMode === "link") cloudCreate(); else if (menuMode === "online") netCreate(); else netLeave();
   menu.close(); save(); render(); scheduleAuto();
 };
 document.getElementById("rulesBtn").onclick = () => {
@@ -3070,7 +3163,7 @@ if (G.mode === "online") { netResume(); render(); }
 { const m = /join=([A-Za-z]{4})/.exec(location.hash || ""); if (m && !(G.mode === "online" && G.net && G.net.code === m[1].toUpperCase())) { const c = m[1].toUpperCase(), lib = libGet();
     if (!(lib["on-" + c + "-1"] && libOpen("on-" + c + "-1")) && !(lib["on-" + c + "-0"] && libOpen("on-" + c + "-0"))) netJoin(c); } }
 libSave();
-linkOpen();
+linkOpen(); cloudJoinHash(); cloudPoll();
 </script>
 </body>
 </html>
