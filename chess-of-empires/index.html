@@ -1905,7 +1905,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1922,7 +1922,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1998,8 +1998,14 @@ function netResume() {
 const linkP = g => g.round * 2 + g.turn;   // grows with every turn
 const b64u = b => { let t = ""; for (let i = 0; i < b.length; i += 8192) t += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); return btoa(t).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
 const unb64u = t => { const bin = atob(t.replace(/-/g, "+").replace(/_/g, "/")), b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b; };
+// short links: the rules travel as the difference from the standard set, and the log only as the sender's last turn
+const STD_RULES = {"handOne":true,"crewAll":true,"costs":{"1":[0,3,0],"2":[0,5,0],"3":[0,4,1]},"pools":false,"garrison":false,"gatherHalf":true,"goldHalf":true,"vilHalf":false,"vilAtk1":true,"woundMark":true,"prices2":true,"milFlex":false,"pawnOne":true,"noHandicap":false,"ecoTiers":false,"bothLines":true,"goldBack":true,"chk":true,"bTrain":false,"tcDef1":true,"needB":true,"campTwo":false,"quadrant":true,"noCastle":true,"noTech":true,"freeVill":false,"crown":true,"tcEarly":true,"cavWalk":true,"noBeside":true,"piles":false,"towerFeudal":true,"darkCamps":true,"towerOnOne":true,"rookW":3,"queenW":4,"needC":true,"start2":true,"darkWar":true,"oneEach":true,"tcSafeDark":false,"tcNear":true,"away3":false,"crewInQuad":true,"camp3":false,"homeGather":true,"trebCastle":true,"tcMill":false,"raidGold":false,"trade":true,"goldSupply":true,"trebDiag":true,"home4":true,"rocks":false,"rockMap":null,"rockShape":"2x2","goldRes":true,"gold2":true,"needCamp":true,"flex2":true,"ageOne":true,"split":true}, STD_ID = 1;
+function packRules(rl) { const d = {}; for (const k of new Set(Object.keys(rl).concat(Object.keys(STD_RULES)))) if (JSON.stringify(rl[k]) !== JSON.stringify(STD_RULES[k])) d[k] = rl[k] === undefined ? null : rl[k]; return d; }
+function unpackRules(d) { const rl = JSON.parse(JSON.stringify(STD_RULES)); for (const k in d) { if (d[k] === null) delete rl[k]; else rl[k] = d[k]; } return rl; }
+function lastTurnLog(sd) { const t = []; for (let i = G.log.length - 1; i >= 0 && t.length < 10; i--) { const e = G.log[i]; if (e.s === 1 - sd) break; t.unshift(e); } return t; }
 async function linkEncode() {
-  const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60);
+  const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" || k === "mode" ? undefined : v));
+  g.log = lastTurnLog(G.net.side); g.rd = packRules(g.rules); g.rv = STD_ID; delete g.rules; g.lt = 1;
   const bytes = new TextEncoder().encode(JSON.stringify({c: G.net.code, s: G.net.side, g}));
   if (window.CompressionStream) { try { const cs = new CompressionStream("deflate-raw"), w = cs.writable.getWriter(); w.write(bytes); w.close(); return "z" + b64u(new Uint8Array(await new Response(cs.readable).arrayBuffer())); } catch (e) {} }
   return "p" + b64u(bytes);
@@ -2008,6 +2014,7 @@ async function linkDecode(str) {
   let b = unb64u(str.slice(1));
   if (str[0] === "z") { const ds = new DecompressionStream("deflate-raw"), w = ds.writable.getWriter(); w.write(b); w.close(); b = new Uint8Array(await new Response(ds.readable).arrayBuffer()); }
   const d = JSON.parse(new TextDecoder().decode(b));
+  if (d && d.g && d.g.rd) { if (d.g.rv !== STD_ID) throw new Error("version"); d.g.rules = unpackRules(d.g.rd); delete d.g.rd; delete d.g.rv; }
   if (!d || !/^[A-Za-z0-9]{4,40}$/.test(d.c) || (d.s !== 0 && d.s !== 1) || !d.g || !Array.isArray(d.g.pcs) || typeof d.g.turn !== "number") throw new Error("bad");
   return d;
 }
@@ -2029,13 +2036,14 @@ function linkCreate() {
 async function linkOpen() {
   const m = /[#&]turn=([A-Za-z0-9_-]+)/.exec(location.hash || ""); if (!m) return;
   try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
-  let d; try { d = await linkDecode(m[1]); } catch (e) { d = null; }
-  if (!d) { UI.msg = "This turn link is damaged or incomplete. Ask your opponent to send it again."; return render(); }
+  let d, why = ""; try { d = await linkDecode(m[1]); } catch (e) { d = null; why = e && e.message; }
+  if (!d) { UI.msg = why === "version" ? "This turn link comes from another version of the game. Reload the game on both phones, then send the turn again." : "This turn link is damaged or incomplete. Ask your opponent to send it again."; return render(); }
   const mine = 1 - d.s, key = "on-" + d.c + "-" + mine, lib = libGet();
   let local = null; if (lib[key]) { try { local = JSON.parse(lib[key].g); } catch (e) {} }
   if (local && linkP(local) >= linkP(d.g)) { if (!G || gameId() !== key) libOpen(key); UI.msg = "You already have this turn."; return render(); }
   if (G && gameId() !== key) save();
-  if (local) { libOpen(key); const net = G.net; G = d.g; G.mode = "online"; G.net = net; }
+  const short = !!d.g.lt; delete d.g.lt;
+  if (local) { libOpen(key); const net = G.net, old = G.log || []; G = d.g; G.mode = "online"; G.net = net; if (short) G.log = old.concat(d.g.log).slice(-300); }
   else { netLeave(); G = d.g; G.mode = "online"; G.net = {code: d.c, side: mine, v: 0, met: true, async: true}; Object.assign(NET, {code: d.c, side: mine, v: 0, black: true, ready: false}); }
   UI = {sel: null, mode: null, busy: false, msg: G.winner !== null ? "The game is over." : G.turn === mine ? `${SIDE[d.s]} has played. Your move.` : `Game ${d.c}: it is ${SIDE[G.turn]}'s turn.`};
   document.getElementById("over").classList.remove("show"); if (menu.open) menu.close();
@@ -2049,7 +2057,7 @@ const cloudOn = () => byLink() && !!G.net.blob;
 const cloudKey = () => linkP(G) + "|" + G.winner;
 const shortCode = c => String(c || "").slice(-4).toUpperCase();
 function cloudBody() { const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60); return JSON.stringify({app: "coe", p: linkP(G), s: G.net.side, g}); }
-function cloudStore() { try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (e) {} libSave(); }
+function cloudStore() { try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (e) {} libSave(); }
 let cloudBusy = false;
 async function cloudPush() {
   if (!cloudOn() || SIM || cloudBusy) return;
@@ -2138,7 +2146,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2179,7 +2187,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v116", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2192,7 +2200,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v116"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v117"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
