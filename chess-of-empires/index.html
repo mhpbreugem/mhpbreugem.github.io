@@ -451,7 +451,7 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
       <li><b>Barracks</b>: home quadrant only (White a1–d4, Black e5–h8), built two checkers high: 2 wood + 2 checkers. <b>Mill</b> and <b>lumber camp</b>: 1 wood + 1 checker, from the Dark Age; one of each at most.</li>
       <li>A <b>crown</b> is a chess piece set on a building. <b>Watch tower</b>: from the Feudal Age a rook on a mill or camp, 3 wood; shoots exactly 2, one action. It climbs like a unit: a second checker (1 wood) from the Castle Age, +1 hit point; a gold checker in the Imperial Age, +1 attack. <b>Castle</b>: from the Castle Age the queen on the barracks, 4 wood; shoots 1–2, one action.</li>
       <li>A crowned building shoots while the piece stands; hits take its checkers first. Shots deal 1, or 2 with gold. The Town Center shoots 1–2 away, like the castle, from the start, for one action.</li>
-      <li>The <b>trebuchet</b> is a coin, not a rook: its checkers are its hit points. Moves 1, shoots exactly 3 away in every direction. It ignores building defence.</li>
+      <li>The <b>trebuchet</b> is a coin, not a rook: its checkers are its hit points. Moves 1 in any direction, shoots exactly 3 away in every direction. It ignores building defence.</li>
     </ul>
     <h3>Combat</h3>
     <ul>
@@ -650,7 +650,7 @@ function moves(p) {
     return out;
   }
   if (!(p.k === "V" || isUnit(p))) return [];
-  const dirs = p.k === "S" ? ORTH : D8;
+  const dirs = p.k === "S" && !G.rules.trebDiag ? ORTH : D8;
   const out = [], seen = new Set([p.f + "," + p.r]); let fr = [[p.f, p.r]];
   const steps = p.k === "C" ? 3 : p.k === "S" && !G.rules.siege2 ? 1 : 2;   // trebuchets move 1, walking cavalry 3
   for (let s = 0; s < steps; s++) {
@@ -846,7 +846,7 @@ function pieceActions(p) {
   }
   if (isUnit(p)) {
     const mv = moves(p);
-    mk("move", "Move", p.k === "C" ? (G.rules.cavWalk ? "up to 3, no jumping" : "up to 3, jumps") : p.k === "A" ? "up to 2, any direction" : p.k === "S" ? "1 straight" : "up to 2", mv.length > 0, "blocked");
+    mk("move", "Move", p.k === "C" ? (G.rules.cavWalk ? "up to 3, no jumping" : "up to 3, jumps") : p.k === "A" ? "up to 2, any direction" : p.k === "S" ? (G.rules.trebDiag ? "1, any direction" : "1 straight") : "up to 2", mv.length > 0, "blocked");
     const tg = attackTargets(p);
     mk("attack", "Attack", "pick a target", A >= 1 && tg.length > 0, "nothing in reach", {targets: tg});
     const b = barracks(s), near = b && nextTo(p, b), cap = A >= 2 ? 2 : 1;
@@ -925,7 +925,7 @@ function movesN(p, n) {
     for (let a = -n; a <= n; a++) for (let b = -n; b <= n; b++) if ((a || b) && free(p.f + a, p.r + b)) out.push([p.f + a, p.r + b]);
     return out;
   }
-  const dirs = p.k === "S" ? ORTH : D8, out = [], seen = new Set([p.f + "," + p.r]); let fr = [[p.f, p.r]];
+  const dirs = p.k === "S" && !G.rules.trebDiag ? ORTH : D8, out = [], seen = new Set([p.f + "," + p.r]); let fr = [[p.f, p.r]];
   for (let s = 0; s < n; s++) {
     const nx = [];
     for (const [cf, cr] of fr) for (const [a, b] of dirs) {
@@ -1893,7 +1893,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v105", JSON.stringify(G)); } catch (x) {}
+    try { localStorage.setItem("eightranks-fan-v106", JSON.stringify(G)); } catch (x) {}
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1910,7 +1910,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v105", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v106", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1986,9 +1986,9 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v105", JSON.stringify(G)); } catch (e) {} }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v106", JSON.stringify(G)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v105"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v106"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2652,7 +2652,7 @@ document.getElementById("menuBtn").onclick = openMenu;
 document.getElementById("closeMenu").onclick = () => menu.close();
 document.getElementById("startBtn").onclick = () => {
   newGame(menuMode, {pools: false, garrison: false, 
-    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
+    gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
     split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, menuDiff);
   UI = {sel: null, mode: null, msg: "", busy: false};
   document.getElementById("over").classList.remove("show");
@@ -2922,7 +2922,7 @@ function showBanner(title, sub) {
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
 }
 /* ================= start ================= */
-if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
+if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison: false, needB: true, campTwo: false, quadrant: true, gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: true, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: false, goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,  split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, 10);
 setView(VIEW); render();
 if (G.winner !== null) finish();
 else if (isAI(G.turn)) runAI();
