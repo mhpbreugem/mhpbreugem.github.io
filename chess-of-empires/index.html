@@ -327,6 +327,10 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
 .netlist .nh{font:700 12px Cinzel,Georgia,serif;color:#5a2d0c;margin-top:4px}
 .netjoin{display:flex;gap:6px;margin:6px 0}
 .netjoin input{flex:1;min-width:0;font:700 16px 'Alegreya Sans',system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;padding:6px 10px;border:1px solid #b8903f;border-radius:10px;background:#fffaf0;color:#35210f}
+#ageDlg h2{margin-bottom:4px}
+.agetips{margin:4px 0 6px;padding-left:18px;font-size:14.5px;line-height:1.35}
+.agetips li{margin:5px 0}
+.agetips li.next{list-style:none;margin-left:-18px;margin-top:9px;padding-top:7px;border-top:1px solid rgba(120,80,30,.3);color:#6e5434;font-size:13.5px}
 </style>
 </head>
 <body>
@@ -462,6 +466,8 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
 <dialog id="treeDlg"><h2>The index</h2>
   <div id="treeBody"></div>
   <button class="full" id="closeTree">Close</button></dialog>
+<dialog id="ageDlg"><h2 id="ageTitle"></h2><ul class="agetips" id="ageList"></ul>
+  <button class="primary full" id="ageOk">Got it</button><button class="full" id="ageOff" style="font-size:12.5px;min-height:32px">Don't show these tips</button></dialog>
 <dialog id="logDlg"><h2>Game log</h2><div class="fulllog" id="fullLog"></div><button class="full" id="closeLog">Close</button></dialog>
 
 <div class="over" id="over"><div class="card"><h2 id="overTitle"></h2><p id="overText" style="color:var(--dim)"></p><button class="iconbtn" id="overNew" style="margin-top:8px">New game</button></div></div>
@@ -1054,6 +1060,7 @@ function exec(a) {
       else if (c.g) p.st.unshift(1 - s); else { G.res[s]--; p.st.push(s); }
       G.acted.push(p.id); G.last = [[p.f, p.r]]; text = `advances to the ${AGES[A + 1]} Age`;
       if (!SIM && (G.mode === "ai" || G.mode === "hot" || G.mode === "watch" || G.mode === "online")) showBanner(`${AGES[A + 1]} Age`, G.mode === "ai" ? (s === 0 ? "You have advanced" : "The computer has advanced") : `${SIDE[s]} has advanced`);
+      if (!SIM && (G.mode === "hot" || (G.mode === "ai" && s === 0) || (G.mode === "online" && s === NET.side))) { const na = A + 1; setTimeout(() => showAgeTips(na, s), 1500); }
       if (!G.ageAt) G.ageAt = [[0, 0, 0, 0], [0, 0, 0, 0]]; G.ageAt[s][A + 1] = G.round; break;
     }
     case "attack": {
@@ -1852,7 +1859,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v101", JSON.stringify(G)); } catch (x) {}
+    try { localStorage.setItem("eightranks-fan-v102", JSON.stringify(G)); } catch (x) {}
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1869,7 +1876,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v101", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v102", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1945,9 +1952,9 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v101", JSON.stringify(G)); } catch (e) {} }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v102", JSON.stringify(G)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v101"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v102"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2626,6 +2633,32 @@ document.getElementById("logBtn").onclick = () => {
   logDlg.showModal();
 };
 document.getElementById("closeLog").onclick = () => logDlg.close();
+/* ================= new-age tips ================= */
+const AGE_TIPS = {
+  1: ["<b>Barracks</b>: a villager builds one in your home quadrant, 2 wood. You need it for the Castle Age.",
+      "<b>Units</b>: a villager next to the barracks becomes infantry (1 food), an archer (2 food) or cavalry (3 food).",
+      "<b>Watch tower</b>: put a rook on a mill or lumber camp, 3 wood. It fires exactly 2 squares away.",
+      "<b>Next</b>: Castle Age costs 5 wood and needs a standing barracks."],
+  2: ["<b>Stronger units</b>: next to the barracks a unit takes a 2nd checker, 1 food, +1 hit point.",
+      "<b>Stronger buildings</b>: a villager raises a mill, camp or tower to two checkers, 1 wood.",
+      "<b>Castle</b>: put the queen on the barracks, 4 wood. It fires 1–2 away. You need it for the Imperial Age.",
+      "<b>Trebuchet</b>: once the castle stands, 5 wood. It shoots exactly 3 away and ignores building defence.",
+      "<b>Gold</b> (hold 2): <b>trade</b> with villagers on a8 and h1 (1 action, 4+), <b>taxation</b> with two villagers at home (1 action, 6), or <b>raid</b> with a villager in the enemy home (4+).",
+      "<b>Next</b>: Imperial Age costs 4 wood + 1 gold and needs a castle."],
+  3: ["<b>Elite units</b>: next to the barracks a unit swaps a checker for gold, 1 gold, +1 attack.",
+      "<b>Gold layer</b>: a villager puts gold on a building, 1 gold. Its shots deal 2.",
+      "<b>Elite trebuchet</b>: a gold checker gives it +1 attack.",
+      "<b>Win</b>: knock the checkers off the enemy Town Center, then hit it while it stands bare."]};
+function tipsOff() { try { return localStorage.getItem("coe-age-tips") === "off"; } catch (e) { return false; } }
+function showAgeTips(a, s) {
+  if (tipsOff() || !AGE_TIPS[a] || G.winner !== null) return;
+  const d = document.getElementById("ageDlg"); if (d.open) d.close();
+  document.getElementById("ageTitle").textContent = `${AGES[a]} Age` + (G.mode === "hot" ? ` · ${SIDE[s]}` : "") + ": now you can";
+  document.getElementById("ageList").innerHTML = AGE_TIPS[a].map(t => `<li${t.startsWith("<b>Next") || t.startsWith("<b>Win") ? ' class="next"' : ""}>${t}</li>`).join("");
+  d.showModal(); d.scrollTop = 0; document.activeElement && document.activeElement.blur();
+}
+document.getElementById("ageOk").onclick = () => document.getElementById("ageDlg").close();
+document.getElementById("ageOff").onclick = () => { try { localStorage.setItem("coe-age-tips", "off"); } catch (e) {} document.getElementById("ageDlg").close(); };
 document.getElementById("overNew").onclick = () => { document.getElementById("over").classList.remove("show"); openMenu(); };
 
 /* ================= full screen ================= */
