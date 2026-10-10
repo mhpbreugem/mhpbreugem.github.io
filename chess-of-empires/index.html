@@ -326,6 +326,10 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
 .onote{font-size:12.5px;color:#6e5434;margin:4px 0 6px}
 .netlist{display:flex;flex-direction:column;gap:5px;margin:4px 0}
 .netlist button{text-align:left}
+.librow{display:flex;gap:5px;align-items:stretch}
+.librow button.res{flex:1;min-width:0}
+.librow button.del{flex:0 0 40px;text-align:center;padding:0}
+.librow.cur button.res{border-color:#f0c65b;box-shadow:0 0 0 2px rgba(240,198,91,.5)}
 .netlist button small{display:block;font-weight:400;font-size:12px;color:#e3cd92}
 .netlist .nh{font:700 12px Cinzel,Georgia,serif;color:#5a2d0c;margin-top:4px}
 .netjoin{display:flex;gap:6px;margin:6px 0}
@@ -360,6 +364,7 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
 </div>
 
 <dialog id="menu">
+  <div id="libBox"><h2>Your games</h2><div id="libList" class="netlist"></div></div>
   <h2>New game</h2>
   <div class="seg" id="modeSeg">
     <button data-m="ai">Against the computer</button>
@@ -526,6 +531,7 @@ let UI = {sel: null, mode: null, msg: "", busy: false};
 function add(o, k, f, r, st) { const p = {id: G.nid++, o, k, f, r, st: st || []}; G.pcs.push(p); return p; }
 const CORE = {handOne: true, crewAll: true, costs: {1: [2, 1, 0], 2: [4, 2, 0], 3: [4, 0, 1]}};
 function newGame(mode, rules, diff) {
+  if (typeof SIM !== "undefined" && !SIM && G && typeof libSave === "function") libSave();
   rules = Object.assign({}, CORE, rules || {});
   if (rules.flex2) rules.pools = false;
   G = {mode, rules, level: [diff || 10, diff || 10], pcs: [], nid: 1, food: [0, 0], wood: [0, 0], gold: [0, 0], res: rules.goldRes ? [15, 15] : [11, 11], stock: rules.goldRes ? [0, 0] : [3, 3],
@@ -1896,7 +1902,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v107", JSON.stringify(G)); } catch (x) {}
+    try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1913,7 +1919,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v107", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1989,9 +1995,61 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v107", JSON.stringify(G)); } catch (e) {} }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); } catch (e) {} libSave(); }
+/* ================= saved games: one browser, several games ================= */
+const LIB = "coe-games", LIBMAX = 12;
+function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
+function libPut(lib) { try { localStorage.setItem(LIB, JSON.stringify(lib)); } catch (e) {
+  const ids = Object.keys(lib).sort((a, b) => lib[a].t - lib[b].t); if (ids.length > 1) { delete lib[ids[0]]; libPut(lib); } } }
+function gameId(g) { g = g || G; if (g.mode === "online" && g.net && g.net.code) return "on-" + g.net.code + "-" + g.net.side; if (!g.gid) g.gid = "g-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); return g.gid; }
+function libSave() {
+  if (!G || !["ai", "hot", "watch", "online"].includes(G.mode)) return;
+  const lib = libGet(), id = gameId(); lib[id] = {t: Date.now(), g: JSON.stringify(G)};
+  const ids = Object.keys(lib).sort((a, b) => lib[b].t - lib[a].t); ids.slice(LIBMAX).forEach(k => delete lib[k]);
+  libPut(lib); try { localStorage.setItem("coe-current", id); } catch (e) {}
+}
+function libLabel(g) {
+  const side = g.net ? g.net.side : 0, mine = g.mode === "online" ? side : g.mode === "ai" ? 0 : null;
+  const what = g.mode === "ai" ? "Against the computer" : g.mode === "hot" ? "Two players, one phone" : g.mode === "watch" ? "Computer vs computer" : `Online ${g.net ? g.net.code : ""} · you play ${SIDE[side]}`;
+  const map = g.rules && g.rules.rockMap ? ` · ${g.rules.rockMap}` : "";
+  const state = g.winner !== null && g.winner !== undefined ? (g.winner === -1 ? "draw" : mine === null ? `${SIDE[g.winner]} won` : g.winner === mine ? "you won" : "you lost")
+    : `round ${g.round}` + (mine !== null && g.turn === mine ? " · your turn" : "");
+  return [what, state + map];
+}
+function libList() {
+  const box = document.getElementById("libList"), lib = libGet(), cur = G ? gameId() : null;
+  const ids = Object.keys(lib).sort((a, b) => lib[b].t - lib[a].t);
+  document.getElementById("libBox").style.display = ids.length ? "" : "none";
+  box.textContent = "";
+  for (const id of ids) {
+    let g; try { g = JSON.parse(lib[id].g); } catch (e) { continue; }
+    const [a, b] = libLabel(g), row = document.createElement("div"); row.className = "librow" + (id === cur ? " cur" : "");
+    const res = document.createElement("button"); res.className = "res"; res.dataset.gid = id; res.textContent = (id === cur ? "▶ " : "") + a;
+    const sm = document.createElement("small"); sm.textContent = b + (id === cur ? " · open now" : ""); res.appendChild(sm);
+    const del = document.createElement("button"); del.className = "del"; del.dataset.del = id; del.textContent = "✕"; del.setAttribute("aria-label", "Delete this game");
+    row.append(res, del); box.appendChild(row);
+  }
+}
+function libOpen(id) {
+  const lib = libGet(); if (!lib[id]) return false;
+  let g; try { g = JSON.parse(lib[id].g); } catch (e) { return false; }
+  if (G && gameId() !== id) save();
+  netLeave(); clearTimeout(autoT);
+  G = g; UI = {sel: null, mode: null, msg: "", busy: false};
+  try { localStorage.setItem("eightranks-fan-v108", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  document.getElementById("over").classList.remove("show");
+  if (menu.open) menu.close();
+  render(); if (G.winner !== null) finish();
+  if (G.mode === "online") netResume(); else if (isAI(G.turn)) runAI(); else scheduleAuto();
+  return true;
+}
+document.getElementById("libList").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.gid) { if (G && gameId() === b.dataset.gid) { menu.close(); return; } libOpen(b.dataset.gid); }
+  if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
+});
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v107"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v108"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2057,12 +2115,21 @@ function renderBoard() {
   }
   // corners
   const [fx, fy] = pos(0, 7), [wx, wy] = pos(7, 0);
-  g.push(`<g pointer-events="none">
+  if (!G.rules.trade) g.push(`<g pointer-events="none">
     <circle cx="${fx - 5}" cy="${fy + 2}" r="6" fill="#3f7d24" stroke="#1e4410"/><circle cx="${fx + 5}" cy="${fy + 2}" r="6" fill="#3f7d24" stroke="#1e4410"/><circle cx="${fx}" cy="${fy - 4}" r="6.5" fill="#4d9230" stroke="#1e4410"/>
     <circle cx="${fx - 4}" cy="${fy - 3}" r="1.7" fill="#d8283a"/><circle cx="${fx + 3}" cy="${fy - 5}" r="1.7" fill="#d8283a"/><circle cx="${fx + 5}" cy="${fy + 2}" r="1.7" fill="#d8283a"/><circle cx="${fx - 5}" cy="${fy + 3}" r="1.7" fill="#d8283a"/><circle cx="${fx}" cy="${fy}" r="1.7" fill="#d8283a"/>
     <rect x="${wx - 1.8}" y="${wy + 3}" width="3.6" height="6" fill="#5b3614"/><path d="M${wx},${wy - 13} L${wx + 8},${wy - 1} H${wx - 8} Z" fill="#2f6b2a" stroke="#163b14"/><path d="M${wx},${wy - 7} L${wx + 9},${wy + 5} H${wx - 9} Z" fill="#2f6b2a" stroke="#163b14"/></g>`);
-  if (G.rules.trade) for (const [f, r] of [[0, 7], [7, 0]]) { const [x, y] = pos(f, r), h = SQS / 2 - 2;
-    g.push(VIEW === "square" ? `<rect x="${x - h}" y="${y - h}" width="${2 * h}" height="${2 * h}" fill="none" stroke="#e7bd52" stroke-width="1.6" stroke-dasharray="3 2" pointer-events="none"/><text x="${x}" y="${y + h - 3}" text-anchor="middle" font-size="7" font-weight="700" fill="#7c5a12" font-family="Alegreya Sans,sans-serif" pointer-events="none">TRADE</text>` : `<polygon points="${diamond(x, y)}" fill="none" stroke="#e7bd52" stroke-width="1.4" stroke-dasharray="3 2" pointer-events="none"/>`); }
+  if (G.rules.trade) for (const [f, r] of [[0, 7], [7, 0]]) {   // trade posts: gold ground, balance scales, a label
+    const [x, y] = pos(f, r), k = VIEW === "square" ? 1 : 0.62, h = VIEW === "square" ? SQS / 2 - 1.5 : 0;
+    if (VIEW === "square") g.push(`<rect x="${x - h}" y="${y - h}" width="${2 * h}" height="${2 * h}" rx="2" fill="#f3d98a" fill-opacity=".55" stroke="#b8892e" stroke-width="1.4" stroke-dasharray="3 2" pointer-events="none"/>`);
+    else g.push(`<polygon points="${diamond(x, y)}" fill="#f3d98a" fill-opacity=".55" stroke="#b8892e" stroke-width="1.2" stroke-dasharray="3 2" pointer-events="none"/>`);
+    const Y = y - (VIEW === "square" ? 4 : 1);
+    g.push(`<g pointer-events="none" transform="translate(${x} ${Y}) scale(${k})" stroke="#6a4a0c" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0 -9 V7 M-5 8 H5 M-10 -6 H10" fill="none"/><circle cx="0" cy="-10" r="1.7" fill="#6a4a0c" stroke="none"/>
+      <path d="M-10 -6 L-13.5 1.5 H-6.5 Z M10 -6 L6.5 1.5 H13.5 Z" fill="#e7bd52"/>
+      <path d="M-13.5 1.5 Q-10 5 -6.5 1.5 M6.5 1.5 Q10 5 13.5 1.5" fill="#c99a3e"/></g>`);
+    if (VIEW === "square") g.push(`<text x="${x}" y="${y + h - 2.5}" text-anchor="middle" font-size="6.6" font-weight="800" letter-spacing=".08em" fill="#6a4a0c" font-family="Alegreya Sans,sans-serif" pointer-events="none">TRADE</text>`);
+  }
   // mine stock
   const [mx, my] = pos(3.5, 3.5);
   for (const [s, dx] of [[0, -9], [1, 9]]) for (let i = 0; i < (G.rules.goldRes ? 0 : G.stock[s]); i++)
@@ -2632,7 +2699,7 @@ function openMenu() {
   menuMap = r.rocks ? (r.rockMap || (r.rockShape === "plus" ? "plus" : "r2")) : "open";
   menuDiff = G && G.level ? G.level[1] : 10;
   menuCastle = G && G.rules.costs && G.rules.costs[2] ? G.rules.costs[2][0] + "," + G.rules.costs[2][1] : "4,2";
-  segUpdate(); menu.showModal();
+  segUpdate(); libList(); menu.showModal();
 }
 function segUpdate() {
   document.querySelectorAll("#modeSeg button").forEach(b => b.classList.toggle("on", b.dataset.m === menuMode));
@@ -2931,7 +2998,9 @@ setView(VIEW); render();
 if (G.winner !== null) finish();
 else if (isAI(G.turn)) runAI();
 if (G.mode === "online") netResume();
-{ const m = /join=([A-Za-z]{4})/.exec(location.hash || ""); if (m && !(G.mode === "online" && G.net && G.net.code === m[1].toUpperCase())) netJoin(m[1]); }
+{ const m = /join=([A-Za-z]{4})/.exec(location.hash || ""); if (m && !(G.mode === "online" && G.net && G.net.code === m[1].toUpperCase())) { const c = m[1].toUpperCase(), lib = libGet();
+    if (!(lib["on-" + c + "-1"] && libOpen("on-" + c + "-1")) && !(lib["on-" + c + "-0"] && libOpen("on-" + c + "-0"))) netJoin(c); } }
+libSave();
 </script>
 </body>
 </html>
