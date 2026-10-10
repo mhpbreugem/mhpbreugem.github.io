@@ -309,6 +309,9 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
  .ix-foot{font-size:10.5px;line-height:1.4;margin:6px 0 2px}
 }
 .ix-nm{font-family:Cinzel,Georgia,serif;font-weight:700;font-size:14px}
+.ix-capw{display:inline-flex;flex-direction:column;align-items:center;gap:1px}
+.ix-cap{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:#7a5427;font-weight:700;line-height:1}
+@media (max-width:640px){.ix-cap{font-size:7.5px;letter-spacing:.02em}}
 .ix-sub{font-size:11px;color:#8a7a64;line-height:1.35;display:flex;flex-wrap:wrap;gap:0 3px;align-items:center}
 .ix-cell{display:flex;align-items:center;justify-content:center;gap:6px;background:color-mix(in srgb,var(--c) 7%,transparent)}
 .ix-g{display:flex;align-items:center;justify-content:center}
@@ -1893,7 +1896,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v106", JSON.stringify(G)); } catch (x) {}
+    try { localStorage.setItem("eightranks-fan-v107", JSON.stringify(G)); } catch (x) {}
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1910,7 +1913,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v106", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v107", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1986,9 +1989,9 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v106", JSON.stringify(G)); } catch (e) {} }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v107", JSON.stringify(G)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v106"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v107"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2888,13 +2891,13 @@ function renderIndex() {
     ["Cavalry", `reach 1 \u00b7 speed 3, no jumping`, [null, ["N", "f", 2, 1], ["N", "ff", 3, 1], ["N", "gf", 3, 2]], [null, ["f", "hp"], ["g", "at"]]],
     ["Trebuchet", `needs a castle \u00b7 one at a time \u00b7 ignores building defence`, [null, null, ["coin", "ww", 2, 1], ["coin", "gw", 2, 2]], []],
     ["Town Center", "your age \u00b7 shoots 1\u20132 from the start", [["K", "", 1, 1], ["K", "w", 2, 1], ["K", "ww", 3, 1], ["K", "gw", 3, 2]], []],
-    ["Barracks", `built two high \u00b7 the queen crowns it: castle`, [null, [null, "ww", 2, 0], ["Q", "ww", 3, 1], ["Q", "gw", 3, 2]], [null, ["Q", ""], ["g", "at"]]],
-    ["Mill / camp", `from the Dark Age \u00b7 the rook crowns it: tower`, [[null, "w", 1, 0], ["R", "w", 2, 1], ["R", "ww", 3, 1], ["R", "gw", 3, 2]], [["R", ""], ["w", "hp"], ["g", "at"]]],
+    ["Barracks / castle", `built two high \u00b7 the queen crowns it: castle`, [null, [null, "ww", 2, 0], ["Q", "ww", 3, 1], ["Q", "gw", 3, 2]], [null, ["Q", ""], ["g", "at"]]],
+    ["Mill / camp / tower", `from the Dark Age \u00b7 the rook crowns it: tower`, [[null, "w", 1, 0], ["R", "w", 2, 1], ["R", "ww", 3, 1], ["R", "gw", 3, 2]], [["R", ""], ["w", "hp"], ["g", "at"]]],
   ];
   const AGES = [["I", "Dark", "start", "", "villagers, mills, camps"], ["II", "Feudal", `advance ${money("w", 3)} + camp`, "new unit", "piece + 1 checker"], ["III", "Castle", `advance ${money("w", 5)} + barracks`, "+ one checker", `${money("f", 1)} unit \u00b7 ${money("w", 1)} building<br><b style="color:#B03A2E">\u2665</b> +1 hit point`], ["IV", "Imperial", `advance ${money("w", 4)} ${money("g", 1)} + castle`, "+ gold checker", `${money("g", 1)}<br><b>\u2694</b> +1 attack`]];
   const DEF = `<span class="ix-def" title="building defence 1"><svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true"><path d="M5 .6 9.2 2.2v3.4c0 2.9-1.9 4.9-4.2 5.8C2.7 10.5.8 8.5.8 5.6V2.2z" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>1</span>`;
   const PS = {Villager: ["P", "f", "1"], Infantry: ["P", "", "\u2013"], Archer: ["B", "f", "1"], Cavalry: ["N", "f", "2"], Trebuchet: ["coin", "w", "3"],
-    "Town Center": ["K", "", "\u2013"], Barracks: ["Q", "w", "4"], "Mill / camp": ["R", "w", "3"]};
+    "Town Center": ["K", "", "\u2013"], "Barracks / castle": ["Q", "w", "4"], "Mill / camp / tower": ["R", "w", "3"]};
   const strip = (nm, cls) => { const p = PS[nm], bg = p[1] === "f" ? F : p[1] === "w" ? W : "#ECE6DA", fg = p[1] ? "#FFFDF8" : "#A89A82";
     const glyph = p[0] === "coin" ? `<svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><ellipse cx="11" cy="5" rx="9.5" ry="3.8" fill="none" stroke="${fg}" stroke-width="1.4"/><text x="11" y="7" text-anchor="middle" font-size="5.5" font-weight="700" fill="${fg}">T</text></svg>` : `<span class="ix-pc" style="color:${fg};font-size:22px">${GL[p[0]]}</span>`;
     return `<div class="ix-row${cls} ix-stripc"><div class="ix-strip" style="background:${bg};color:${fg}">${glyph}<b>${p[2]}${p[3] ? `<span style="color:#F4D774"> +${p[3]}</span>` : ""}</b></div></div>`; };
@@ -2904,7 +2907,8 @@ function renderIndex() {
     const cls = k === 5 ? " ix-sep" : "";
     h += `<div class="ix-lab ix-row${cls}"><div class="ix-nm">${r[0]}</div><div class="ix-sub">${r[1]}</div></div>` + strip(r[0], cls);
     r[2].forEach((c, i) => {
-      h += `<div class="ix-cell ix-row${cls}" style="--c:${AG[i]}">${c ? stack(c[0], c[1]) + stat(c[2], c[3]) + (k >= 5 ? DEF : "") : ""}</div>`;
+      const cap = k === 6 ? (i >= 2 ? "castle" : i === 1 ? "barracks" : "") : k === 7 ? (i >= 1 ? "tower" : "mill / camp") : "";
+      h += `<div class="ix-cell ix-row${cls}" style="--c:${AG[i]}">${c ? (cap ? `<span class="ix-capw">` : "") + stack(c[0], c[1]) + (cap ? `<span class="ix-cap">${cap}</span></span>` : "") + stat(c[2], c[3]) + (k >= 5 ? DEF : "") : ""}</div>`;
     });
   });
   h += `</div></div><p class="ix-foot">Everything gathers on 4+: home gives food or wood, the fields food, the forest wood; from the Castle Age a villager in the enemy’s home takes gold, or villagers on both a8 and h1 trade for it (1 action, 4+); hold 2. Food buys people and horses; wood buys buildings, ages and machines. Checker colour shows its price: <span class="ix-sw" style="background:${F}"></span> 1 food on a unit, <span class="ix-sw" style="background:${W}"></span> 1 wood on a building or machine, <span class="ix-sw" style="background:${Gd}"></span> 1 gold. A chess piece adds its own price; ages cost wood. The small shield is building defence: every building has 1.</p>`;
