@@ -371,7 +371,9 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
     <button data-m="hot">Two players</button>
     <button data-m="watch">Computer vs computer</button>
     <button data-m="online">Online: two phones</button>
+    <button data-m="link">By link: play anytime</button>
   </div>
+  <div id="linkBox" style="display:none"><p class="onote">Two phones, no account, nobody has to be online together. You play White: make your move, end your turn and tap “Send my turn” to message the link. Your opponent opens it whenever they like, plays Black and sends a link back. Every turn is one link; the game is saved on both phones.</p></div>
   <div id="onlineBox" style="display:none">
     <p class="onote">Two phones, no account needed. One phone creates a game (and plays White) and sends the invite link or the 4-letter code; the other opens the link, or types the code here.</p>
     <div class="netjoin"><input id="joinCode" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="CODE" aria-label="Game code"><button id="joinBtn">Join as Black</button></div>
@@ -1851,7 +1853,8 @@ function endTurnAll() {
 // the higher version wins, so a phone that reconnects catches up. A small public broker (PeerJS) only introduces the two phones.
 const PEERJS = "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js", PFX = "chess-of-empires-v1-";
 const NET = {peer: null, conn: null, code: null, side: null, v: 0, ready: false, applying: false, black: false, linked: false, err: "", retry: null, token: null};
-function remote(s) { return !!G && G.mode === "online" && (!NET.ready || !NET.black || s !== NET.side); }
+const byLink = () => !!G && G.mode === "online" && !!G.net && !!G.net.async;
+function remote(s) { return !!G && G.mode === "online" && (byLink() ? s !== G.net.side : (!NET.ready || !NET.black || s !== NET.side)); }
 function netToken() {
   try { let t = localStorage.getItem("coe-net-token"); if (!t) { t = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("coe-net-token", t); } return t; }
   catch (e) { return NET.token || (NET.token = Math.random().toString(36).slice(2)); }
@@ -1902,7 +1905,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v114", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1919,7 +1922,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v114", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -1987,15 +1990,65 @@ async function netJoin(code, quiet) {
 }
 function netResume() {
   if (!G || G.mode !== "online" || !G.net || !G.net.code) return;
+  if (G.net.async) { netLeave(); Object.assign(NET, {code: G.net.code, side: G.net.side, v: G.net.v || 0, black: true, ready: false}); return; }
   if (G.net.side === 0) { netLeave(); NET.code = G.net.code; NET.side = 0; NET.v = G.net.v || 1; NET.black = !!G.net.met; netHost(G.net.code, false); }
   else netJoin(G.net.code, true);
 }
+/* ================= play by link: one turn at a time, nobody has to be online together ================= */
+const linkP = g => g.round * 2 + g.turn;   // grows with every turn
+const b64u = b => { let t = ""; for (let i = 0; i < b.length; i += 8192) t += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); return btoa(t).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+const unb64u = t => { const bin = atob(t.replace(/-/g, "+").replace(/_/g, "/")), b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b; };
+async function linkEncode() {
+  const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60);
+  const bytes = new TextEncoder().encode(JSON.stringify({c: G.net.code, s: G.net.side, g}));
+  if (window.CompressionStream) { try { const cs = new CompressionStream("deflate-raw"), w = cs.writable.getWriter(); w.write(bytes); w.close(); return "z" + b64u(new Uint8Array(await new Response(cs.readable).arrayBuffer())); } catch (e) {} }
+  return "p" + b64u(bytes);
+}
+async function linkDecode(str) {
+  let b = unb64u(str.slice(1));
+  if (str[0] === "z") { const ds = new DecompressionStream("deflate-raw"), w = ds.writable.getWriter(); w.write(b); w.close(); b = new Uint8Array(await new Response(ds.readable).arrayBuffer()); }
+  const d = JSON.parse(new TextDecoder().decode(b));
+  if (!d || !/^[A-Z]{4}$/.test(d.c) || (d.s !== 0 && d.s !== 1) || !d.g || !Array.isArray(d.g.pcs) || typeof d.g.turn !== "number") throw new Error("bad");
+  return d;
+}
+async function linkSend() {
+  if (!G || !G.net) return;
+  const url = (onWeb() ? location.origin + location.pathname : WEB) + "#turn=" + (await linkEncode()), who = SIDE[G.net.side];
+  const text = G.winner !== null ? `Chess of Empires: the game is over. Open to see it:` : `Chess of Empires: ${who} has played (round ${G.round}). Your move:`;
+  try { if (navigator.share) { await navigator.share({title: "Chess of Empires", text, url}); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(text + " " + url); UI.msg = "Link copied. Paste it into a message to your opponent."; }
+  catch (e) { UI.msg = `Send this link: <b style="user-select:all;-webkit-user-select:all;word-break:break-all">${url}</b>`; }
+  render();
+}
+function linkCreate() {
+  netLeave();
+  const code = netCode(); G.net = {code, side: 0, v: 0, met: true, async: true};
+  Object.assign(NET, {code, side: 0, v: 0, black: true, ready: false});
+  UI.msg = "You play White. Make your move, end your turn, then send the link to your opponent.";
+}
+async function linkOpen() {
+  const m = /[#&]turn=([A-Za-z0-9_-]+)/.exec(location.hash || ""); if (!m) return;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  let d; try { d = await linkDecode(m[1]); } catch (e) { d = null; }
+  if (!d) { UI.msg = "This turn link is damaged or incomplete. Ask your opponent to send it again."; return render(); }
+  const mine = 1 - d.s, key = "on-" + d.c + "-" + mine, lib = libGet();
+  let local = null; if (lib[key]) { try { local = JSON.parse(lib[key].g); } catch (e) {} }
+  if (local && linkP(local) >= linkP(d.g)) { if (!G || gameId() !== key) libOpen(key); UI.msg = "You already have this turn."; return render(); }
+  if (G && gameId() !== key) save();
+  if (local) { libOpen(key); const net = G.net; G = d.g; G.mode = "online"; G.net = net; }
+  else { netLeave(); G = d.g; G.mode = "online"; G.net = {code: d.c, side: mine, v: 0, met: true, async: true}; Object.assign(NET, {code: d.c, side: mine, v: 0, black: true, ready: false}); }
+  UI = {sel: null, mode: null, busy: false, msg: G.winner !== null ? "The game is over." : G.turn === mine ? `${SIDE[d.s]} has played. Your move.` : `Game ${d.c}: it is ${SIDE[G.turn]}'s turn.`};
+  document.getElementById("over").classList.remove("show"); if (menu.open) menu.close();
+  save(); render(); if (G.winner !== null) finish();
+  if (G.turn === mine && navigator.vibrate) try { navigator.vibrate(120); } catch (e) {}
+}
+window.addEventListener("hashchange", linkOpen);
 document.getElementById("joinBtn").addEventListener("click", () => netJoin(document.getElementById("joinCode").value));
 document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key === "Enter") netJoin(e.target.value); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v114", JSON.stringify(G)); } catch (e) {} libSave(); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); } catch (e) {} libSave(); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2010,7 +2063,7 @@ function libSave() {
 }
 function libLabel(g) {
   const side = g.net ? g.net.side : 0, mine = g.mode === "online" ? side : g.mode === "ai" ? 0 : null;
-  const what = g.mode === "ai" ? "Against the computer" : g.mode === "hot" ? "Two players, one phone" : g.mode === "watch" ? "Computer vs computer" : `Online ${g.net ? g.net.code : ""} · you play ${SIDE[side]}`;
+  const what = g.mode === "ai" ? "Against the computer" : g.mode === "hot" ? "Two players, one phone" : g.mode === "watch" ? "Computer vs computer" : `${g.net && g.net.async ? "By link" : "Online"} ${g.net ? g.net.code : ""} · you play ${SIDE[side]}`;
   const map = g.rules && g.rules.rockMap ? ` · ${g.rules.rockMap}` : "";
   const state = g.winner !== null && g.winner !== undefined ? (g.winner === -1 ? "draw" : mine === null ? `${SIDE[g.winner]} won` : g.winner === mine ? "you won" : "you lost")
     : `round ${g.round}` + (mine !== null && g.turn === mine ? " · your turn" : "");
@@ -2036,7 +2089,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v114", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v115", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2049,7 +2102,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v114"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v115"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2266,7 +2319,7 @@ function renderStatus() {
   const s = G.turn, A = age(s);
   let who = SIDE[s];
   if (G.mode === "ai") who = s === 0 ? "Your turn" : "Computer";
-  if (G.mode === "online") who = !NET.black ? "Waiting" : s === NET.side ? "Your turn" : "Opponent" + (NET.linked ? "" : " (offline)");
+  if (G.mode === "online") who = !NET.black ? "Waiting" : s === NET.side ? "Your turn" : "Opponent" + (NET.linked || byLink() ? "" : " (offline)");
   const pools = G.rules.pools
     ? `<span>Eco ${pipStr(G.acts.eco, 2)}</span><span>Mil ${pipStr(G.acts.mil, 2)}</span>`
     : `<span>Actions ${pipStr(G.acts.any, G.rules.flex2 && G.rules.castle3 && age(s) >= 2 ? 3 : 2)}</span>` + (G.rules.chk && G.acts.camp !== undefined && camps(G.turn).length ? `<span>Camps ${pipStr(G.acts.camp, camps(G.turn).length)}</span>` : "");
@@ -2497,13 +2550,14 @@ function renderPlayers() {
 function renderPanel() {
   const el = document.getElementById("panel");
   const msg = UI.msg ? `<div class="msg">${UI.msg}</div>` : "";
-  if (G.winner !== null) { el.innerHTML = `<div class="ptitle">Game over</div>${msg}`; return; }
+  if (G.winner !== null) { el.innerHTML = `<div class="ptitle">Game over</div>${msg}${byLink() ? `<div class="acts" style="margin:6px 0"><button id="sendTurnBtn" class="primary">Send the result</button></div>` : ""}`; return; }
   if (G.mode === "online" && !UI.sel && (remote(G.turn) || NET.err)) {
     const code = NET.code || (G.net ? G.net.code : "");
     let title, body;
     if (!NET.black && NET.side === 0) { title = "Waiting for your opponent"; body = `Game code <b style="font-size:17px;letter-spacing:.12em">${code}</b>. Your opponent opens <b style="user-select:all;-webkit-user-select:all;word-break:break-all">${netLink(code)}</b> on their phone and plays Black, or opens the game and types the code under Game › Online. No account needed.<div class="acts" style="margin-top:6px"><button id="shareBtn" class="primary">Share invite link</button></div>`; }
     else if (!NET.black) { title = "Joining game " + code; body = "Connecting to the other phone…"; }
-    else if (remote(G.turn)) { title = "Opponent's turn"; body = `You play ${SIDE[NET.side]} · game ${code}${NET.linked ? "" : " · <b>opponent offline</b>"}. Their moves appear here as they make them; tap any piece to see its details.`; }
+    else if (byLink()) { title = "Opponent's turn"; body = `You play ${SIDE[NET.side]} · game ${code}. Send your opponent the link: they open it when they have time, play their turn and send one back. This game is saved on this phone.<div class="acts" style="margin-top:6px"><button id="sendTurnBtn" class="primary">Send my turn</button></div>`; }
+    else if (remote(G.turn)) { title = "Opponent's turn"; body = `You play ${SIDE[NET.side]} · game ${code}${NET.linked ? "" : " · <b>opponent offline</b>"}. Their moves appear here as they make them; tap any piece to see its details.${NET.linked ? "" : `<div class="acts" style="margin-top:6px"><button id="sendTurnBtn">Send my turn by link instead</button></div>`}`; }
     else { title = "Your move"; body = ""; }
     el.innerHTML = `<div class="ptitle">${title}</div><div class="pmeta">${body}${NET.err ? `<div style="color:#8e1f16;margin-top:4px">${NET.err}</div>` : ""}</div>${msg}`;
     return;
@@ -2666,6 +2720,7 @@ document.getElementById("panel").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b || b.disabled) return;
   if (b.id === "cancelMode") { UI.mode = null; return render(); }
   if (b.id === "shareBtn") return netShare();
+  if (b.id === "sendTurnBtn") return linkSend();
   if (b.dataset.act !== undefined) return chooseAction(+b.dataset.act);
   if (b.dataset.partner !== undefined) {
     const m = UI.mode, id = +b.dataset.partner;
@@ -2707,7 +2762,7 @@ document.getElementById("endBtn").addEventListener("click", async () => {
 const menu = document.getElementById("menu"), rulesDlg = document.getElementById("rulesDlg"), logDlg = document.getElementById("logDlg");
 let menuMode = "ai", menuDiff = 10, menuCastle = "4,2", menuMap = "open";
 function openMenu() {
-  menuMode = G ? (G.mode === "hot" || G.mode === "watch" || G.mode === "online" ? G.mode : "ai") : "ai";
+  menuMode = G ? (byLink() ? "link" : G.mode === "hot" || G.mode === "watch" || G.mode === "online" ? G.mode : "ai") : "ai";
   const r = G ? G.rules : {};
   menuMap = r.rocks ? (r.rockMap || (r.rockShape === "plus" ? "plus" : "r2")) : "open";
   menuDiff = G && G.level ? G.level[1] : 10;
@@ -2719,7 +2774,8 @@ function segUpdate() {
   document.querySelectorAll("#diffSeg button").forEach(b => b.classList.toggle("on", +b.dataset.d === menuDiff));
   document.getElementById("diffSeg").style.display = menuMode === "ai" || menuMode === "watch" ? "flex" : "none";
   document.getElementById("onlineBox").style.display = menuMode === "online" ? "" : "none";
-  document.getElementById("startBtn").textContent = menuMode === "online" ? "Create online game (you play White)" : "Start new game";
+  document.getElementById("linkBox").style.display = menuMode === "link" ? "" : "none";
+  document.getElementById("startBtn").textContent = menuMode === "online" ? "Create online game (you play White)" : menuMode === "link" ? "Create game by link (you play White)" : "Start new game";
   document.querySelectorAll("#castleSeg button").forEach(b => b.classList.toggle("on", b.dataset.c === menuCastle));
   document.querySelectorAll("#viewSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === VIEW));
   document.querySelectorAll("#ckSeg button").forEach(b => b.classList.toggle("on", b.dataset.c === CKV));
@@ -2734,12 +2790,12 @@ document.getElementById("modeSeg").addEventListener("click", e => { const b = e.
 document.getElementById("menuBtn").onclick = openMenu;
 document.getElementById("closeMenu").onclick = () => menu.close();
 document.getElementById("startBtn").onclick = () => {
-  newGame(menuMode, {pools: false, garrison: false, 
+  newGame(menuMode === "link" ? "online" : menuMode, {pools: false, garrison: false, 
     gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: false, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
     split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, menuDiff);
   UI = {sel: null, mode: null, msg: "", busy: false};
   document.getElementById("over").classList.remove("show");
-  if (menuMode === "online") netCreate(); else netLeave();
+  if (menuMode === "link") linkCreate(); else if (menuMode === "online") netCreate(); else netLeave();
   menu.close(); save(); render(); scheduleAuto();
 };
 document.getElementById("rulesBtn").onclick = () => {
@@ -3010,10 +3066,11 @@ if (!load()) newGame("ai", {noTech: true, noCastle: true, pools: true, garrison:
 setView(VIEW); render();
 if (G.winner !== null) finish();
 else if (isAI(G.turn)) runAI();
-if (G.mode === "online") netResume();
+if (G.mode === "online") { netResume(); render(); }
 { const m = /join=([A-Za-z]{4})/.exec(location.hash || ""); if (m && !(G.mode === "online" && G.net && G.net.code === m[1].toUpperCase())) { const c = m[1].toUpperCase(), lib = libGet();
     if (!(lib["on-" + c + "-1"] && libOpen("on-" + c + "-1")) && !(lib["on-" + c + "-0"] && libOpen("on-" + c + "-0"))) netJoin(c); } }
 libSave();
+linkOpen();
 </script>
 </body>
 </html>
