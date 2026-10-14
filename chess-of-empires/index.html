@@ -390,6 +390,11 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
     <button data-v="diamond">Diamond</button>
     <button data-v="3d">3D</button>
   </div>
+  <div class="seg" id="lookSeg">
+    <button data-l="chess">Chess pieces and checkers</button>
+    <button data-l="aoe">Age of Empires look</button>
+  </div>
+  <p style="font-size:12.5px;color:var(--dim);margin:-2px 0 8px">The Age of Empires look draws units and buildings as pictures with hit points as hearts, and words the hints that way. The 3D view keeps chess pieces.</p>
   <div class="seg" id="ckSeg">
     <button data-c="dots">Checkers as dots</button>
     <button data-c="flag">Checkers on a flag</button>
@@ -1905,7 +1910,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1922,7 +1927,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -2057,7 +2062,7 @@ const cloudOn = () => byLink() && !!G.net.blob;
 const cloudKey = () => linkP(G) + "|" + G.winner;
 const shortCode = c => String(c || "").slice(-4).toUpperCase();
 function cloudBody() { const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60); return JSON.stringify({app: "coe", p: linkP(G), s: G.net.side, g}); }
-function cloudStore() { try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (e) {} libSave(); }
+function cloudStore() { try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (e) {} libSave(); }
 let cloudBusy = false;
 async function cloudPush() {
   if (!cloudOn() || SIM || cloudBusy) return;
@@ -2146,7 +2151,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2187,7 +2192,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2200,7 +2205,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v118"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v119"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2344,7 +2349,87 @@ function rockOutcrop() {   // one outcrop over d4, e4, d5, e5
     t += `<ellipse cx="${cx + dx * u}" cy="${cy + dy * u * k}" rx="${rr * u}" ry="${rr * u * 0.75 * k}" fill="#9a9184" stroke="#4a433b" stroke-width="0.5"/>`;
   return t + `</g>`;
 }
+
+/* ================= Age of Empires look (pictures and hearts instead of chess pieces and checkers) ================= */
+let LOOK = "chess";
+try { LOOK = localStorage.getItem("coe-look") === "aoe" ? "aoe" : "chess"; } catch (e) {}
+const aoeOn = () => LOOK === "aoe";
+function aoeKind(p) {   // which picture a piece gets
+  if (p.k === "camp") return CR() ? (p.cr ? "tower" : campRes(p)[0] === FOOD ? "mill" : "lumber") : (p.st.length >= 2 ? "tower" : campRes(p)[0] === FOOD ? "mill" : "lumber");
+  if (p.k === "B") return (CR() ? p.cr : (p.cs || (G.rules.chk && p.st.length >= 2))) ? "castle" : "barracks";
+  if (p.k === "I") return "infantry";
+  return {V: "villager", A: "archer", C: "cavalry", S: "trebuchet", K: "tc"}[p.k] || "villager";
+}
+function aoeGlyph(kind, ink, bg) {   // 24 x 24 drawings, centred on 0,0, drawn in `ink`; `bg` cuts out details
+  const f = `fill="${ink}"`, st = (w) => `stroke="${ink}" stroke-width="${w}" fill="none" stroke-linecap="round" stroke-linejoin="round"`;
+  switch (kind) {
+    case "villager": return `<circle cx="-2" cy="-7" r="3.2" ${f}/><path d="M-7 11 L-5.5 -2 Q-2 -4.5 1.5 -2 L3 11Z" ${f}/><path d="M8 -10 V11" ${st(1.6)}/><path d="M5.5 -10 V-5 H10.5 V-10 M8 -5 V-1" ${st(1.3)}/>`;
+    case "infantry": return `<g transform="translate(3 0)"><path d="M-1.3 -11 L1.3 -11 L1.8 4 L-1.8 4Z" ${f}/><rect x="-5.5" y="4" width="11" height="2.2" rx="1" ${f}/><rect x="-1.4" y="6" width="2.8" height="5" rx="1" ${f}/></g><path d="M-11 -4 H-3 V3 Q-3 8 -7 11 Q-11 8 -11 3Z" ${f}/>`;
+    case "archer": return `<path d="M-5 -11 Q10 0 -5 11" ${st(2)}/><path d="M-5 -11 V11" ${st(1)}/><path d="M-9 0 H9" ${st(1.6)}/><path d="M11 0 L5.5 -3.4 V3.4Z" ${f}/><path d="M-9 0 L-11 -2.5 M-9 0 L-11 2.5" ${st(1.2)}/>`;
+    case "cavalry": return `<path d="M-7 11 L-4.5 2 Q-9 -2 -5.5 -7.5 L-1 -11.5 L1 -8 L7 -6 Q11.5 -4 10.5 0 L6.5 1.2 Q4.5 3 3.5 5.5 L4.5 11Z" ${f}/><circle cx="3" cy="-4" r="1.1" fill="${bg}"/>`;
+    case "trebuchet": return `<path d="M-9 11 L-1 -2 M9 11 L1 -2 M-12 11 H12" ${st(2)}/><path d="M-11 -9 L8 4" ${st(2.2)}/><rect x="5" y="3" width="6.5" height="6.5" rx="1" ${f}/><circle cx="-11" cy="-9" r="2.4" ${f}/>`;
+    case "tc": return `<path d="M-12 -1 L0 -11 L12 -1Z" ${f}/><rect x="-9" y="-1" width="18" height="12" ${f}/><rect x="-2.6" y="3.5" width="5.2" height="7.5" fill="${bg}"/><circle cx="0" cy="-5" r="1.7" fill="${bg}"/>`;
+    case "barracks": return `<path d="M-12 0 L0 -10 L12 0Z" ${f}/><rect x="-10" y="0" width="20" height="11" ${f}/><path d="M-4.5 3 L4.5 9.5 M4.5 3 L-4.5 9.5" stroke="${bg}" stroke-width="1.8" stroke-linecap="round"/>`;
+    case "castle": return `<rect x="-8" y="-3" width="16" height="14" ${f}/><rect x="-12" y="-10" width="6" height="21" ${f}/><rect x="6" y="-10" width="6" height="21" ${f}/><rect x="-12" y="-13" width="2.2" height="3.2" ${f}/><rect x="-8.2" y="-13" width="2.2" height="3.2" ${f}/><rect x="6" y="-13" width="2.2" height="3.2" ${f}/><rect x="9.8" y="-13" width="2.2" height="3.2" ${f}/><path d="M-3 11 V5 Q0 1.5 3 5 V11Z" fill="${bg}"/>`;
+    case "mill": return `<path d="M-4.5 11 L-3 -1 H3 L4.5 11Z" ${f}/><path d="M0 -3 L-9 -12 M0 -3 L9 -12 M0 -3 L-9 6 M0 -3 L9 6" ${st(2.2)}/><circle cx="0" cy="-3" r="2" ${f}/>`;
+    case "lumber": return `<rect x="-11" y="-1" width="22" height="5.6" rx="2.8" ${f}/><rect x="-11" y="5.4" width="22" height="5.6" rx="2.8" ${f}/><rect x="-6.5" y="-7.4" width="13" height="5.6" rx="2.8" ${f}/><circle cx="-8.2" cy="1.8" r="1.1" fill="${bg}"/><circle cx="-8.2" cy="8.2" r="1.1" fill="${bg}"/>`;
+    case "tower": return `<rect x="-5.5" y="-4" width="11" height="15" ${f}/><rect x="-7" y="-10" width="3.6" height="6" ${f}/><rect x="-1.8" y="-10" width="3.6" height="6" ${f}/><rect x="3.4" y="-10" width="3.6" height="6" ${f}/><rect x="-1.1" y="0" width="2.2" height="5.5" fill="${bg}"/>`;
+  }
+  return "";
+}
+const HEART = "M0 3.4 C-4.6 0 -4 -3.4 -2 -3.4 C-0.9 -3.4 0 -2.5 0 -1.8 C0 -2.5 0.9 -3.4 2 -3.4 C4 -3.4 4.6 0 0 3.4Z";
+function aoeHearts(p) {   // [kind, ...]: o = own heart, g = gold heart, w = damage (empty heart)
+  const n = Math.max(0, hp(p)), gold = Math.min(n, p.st.filter(c => c !== p.o).length), dmg = p.k === "K" ? G.pile[p.o] : (+p.w || 0);
+  return Array(n - gold).fill("o").concat(Array(gold).fill("g"), Array(dmg).fill("w"));
+}
+function heartSVG(kind, cx, cy, sc, side) {
+  const rim = side ? "#c23b2e" : "#2f6fd0";
+  const fill = kind === "w" ? "#fff" : kind === "g" ? "#e0b44a" : rim, strokeC = kind === "g" ? "#8a6414" : kind === "w" ? "#b3392b" : "rgba(0,0,0,.4)";
+  return `<path transform="translate(${cx} ${cy}) scale(${sc})" d="${HEART}" fill="${fill}" stroke="${strokeC}" stroke-width="${kind === "w" ? 0.8 : 0.6}"${kind === "w" ? ' stroke-dasharray="1.6 1.2"' : ""}/>`;
+}
+function pieceAoE(p) {
+  const [x, y] = pos(p.f, p.r), col = p.o === 0 ? "url(#tokW)" : "url(#tokB)", ink = p.o === 0 ? "#2a241d" : "#f4ecdc", bg = p.o === 0 ? "#efe6d2" : "#2c2824";
+  const dim = p.o === G.turn && acted(p) ? ' opacity="0.62"' : "", rim = p.o ? "#c23b2e" : "#2f6fd0", K = VIEW === "square" ? 1.4 : 1;
+  const bld = isBld(p);
+  let s = `<g pointer-events="none" filter="url(#psh)"${dim}>`;
+  s += `<g transform="translate(${x} ${y - 2}) scale(${K}) translate(${-x} ${-(y - 2)})">`;
+  if (hasGold(p) && !G.rules.chk) s += bld ? `<rect x="${x - 13.3}" y="${y - 14.3}" width="26.6" height="26.6" rx="3.4" fill="none" stroke="var(--goldline)" stroke-width="2.6"/>` : `<circle cx="${x}" cy="${y - 1}" r="13.4" fill="none" stroke="var(--goldline)" stroke-width="2.6"/>`;
+  if (bld) s += `<rect x="${x - 11.4}" y="${y - 12.4}" width="22.8" height="22.8" rx="3" fill="${col}" stroke="${rim}" stroke-width="2"/>`;
+  else s += `<circle cx="${x}" cy="${y - 1}" r="11.6" fill="${col}" stroke="${rim}" stroke-width="2"/>`;
+  s += `<g transform="translate(${x} ${y - 1}) scale(0.78)">${aoeGlyph(aoeKind(p), ink, bg)}</g>`;
+  if (p.k === "I" && p.st.length === 0 && G.rules.woundMark && p.w) s += `<circle cx="${x}" cy="${y - 1}" r="11.2" fill="none" stroke="#b3392b" stroke-width="1.2" stroke-dasharray="2 2"/>`;
+  s += `</g>`;
+  const hs = aoeHearts(p), n = hs.length, hy = y + 12.5 * K + 1, step = 5.2 * Math.min(K, 1.15);
+  hs.forEach((kd, i) => { s += heartSVG(kd, x + (i - (n - 1) / 2) * step, hy, 0.62 * Math.min(K, 1.15) * 1.0, p.o); });
+  return s + "</g>";
+}
+function aoeMini(p) { return `<svg class="aoemini" viewBox="-13 -14 26 28" width="26" height="28" aria-hidden="true"><circle cx="0" cy="0" r="12.5" fill="${p.o ? "#2c2824" : "#efe6d2"}" stroke="${p.o ? "#c23b2e" : "#2f6fd0"}" stroke-width="1.6"/><g transform="scale(0.8)">${aoeGlyph(aoeKind(p), p.o ? "#f4ecdc" : "#2a241d", p.o ? "#2c2824" : "#efe6d2")}</g></svg>`; }
+function aoeHeartRow(p) { return aoeHearts(p).map(k => `<svg viewBox="-5 -4 10 8" width="13" height="11" aria-hidden="true">${heartSVG(k, 0, 0, 1, p.o)}</svg>`).join(""); }
+const AOE_TEXT = [
+  [/Put a rook on: watch tower/g, "Build a watch tower"], [/Put the queen on: castle/g, "Upgrade to castle"],
+  [/[Pp]uts a rook on the ([a-z ]+): now a watch tower/g, "builds a watch tower on the $1"], [/puts the queen on the barracks: now a castle/g, "upgrades the barracks to a castle"],
+  [/no rook yet: it does not shoot/g, "no watch tower yet: it does not shoot"], [/no queen yet: it does not shoot/g, "not a castle yet: it does not shoot"],
+  [/both bishops in use/g, "both archers in use"], [/both knights in use/g, "both cavalry in use"], [/all 8 pawns in use/g, "all 8 foot units in use"],
+  [/\bgold checkers\b/g, "gold upgrades"], [/\bgold checker\b/g, "gold upgrade"], [/\bchecker\b/g, "hit point"], [/\bcheckers\b/g, "hit points"],
+  [/\b([Aa]) rook\b/g, "$1 watch tower"], [/\b([Tt])he queen\b/g, "$1he keep"], [/\bpawns\b/g, "foot units"], [/\bpawn\b/g, "foot unit"],
+  [/\bbishops\b/g, "archers"], [/\bbishop\b/g, "archer"], [/\bknights\b/g, "cavalry"], [/\bknight\b/g, "cavalry"], [/\brooks\b/g, "watch towers"], [/\brook\b/g, "watch tower"],
+  [/\bchess piece\b/g, "unit"],
+];
+function aoeText(str) { for (const [a, b] of AOE_TEXT) str = str.replace(a, b); return str; }
+let aoeBusy = false;
+function aoeWalk(root) {
+  if (!aoeOn() || aoeBusy || !root) return; aoeBusy = true;
+  try {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {acceptNode: n => n.parentNode && /^(SCRIPT|STYLE|TEXTAREA|INPUT)$/.test(n.parentNode.nodeName) ? NodeFilter.FILTER_REJECT : /[A-Za-z]/.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT});
+    const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+    for (const n of nodes) { const t = aoeText(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t; }
+  } finally { aoeBusy = false; }
+}
+new MutationObserver(ms => { if (!aoeOn() || aoeBusy) return; for (const m of ms) { if (m.type === "characterData") aoeWalk(m.target.parentNode); else m.addedNodes.forEach(n => aoeWalk(n.nodeType === 1 ? n : n.parentNode)); } })
+  .observe(document.body, {childList: true, subtree: true, characterData: true});
+function setLook(l) { LOOK = l === "aoe" ? "aoe" : "chess"; try { localStorage.setItem("coe-look", LOOK); } catch (e) {} }
 function pieceSVG(p) {
+  if (aoeOn()) return pieceAoE(p);
   const [x, y] = pos(p.f, p.r), col = p.o === 0 ? "url(#tokW)" : "url(#tokB)", edge = p.o === 0 ? "#7e7466" : "#000", txt = p.o === 0 ? "#1d1a16" : "#f2ecdf";
   const dim = p.o === G.turn && acted(p) ? ' opacity="0.62"' : "";
   let s = `<g pointer-events="none" filter="url(#psh)"${dim}>`;
@@ -2698,6 +2783,7 @@ function renderPanel() {
   const rVal = sp.k === "A" ? "2" : sp.k === "S" ? "3" : (sp.k === "I" || sp.k === "C") ? "1" : (isTower || isCastle || isTC2) ? (CR() ? (sp.k === "B" ? "1–2" : sp.k === "K" ? (hasMH(sp.o) || G.rules.tcNear ? "1–2" : "2") : "2") : (hasMH(sp.o) ? "1–2" : "2")) : (sp.k === "V" && vilFight(sp.o)) ? "1" : null;
   const sVal = sp.k === "C" ? 3 : sp.k === "S" ? (G.rules.siege2 ? 2 : 1) : (sp.k === "V" || sp.k === "I" || sp.k === "A") ? 2 : null;
   const hpMake = (() => {
+    if (aoeOn()) return aoeMini(sp) + `<span class="hearts">${aoeHeartRow(sp)}</span>`;
     const glyph = sp.k === "camp" ? (CR() && sp.cr ? GLY.S : "") : (CR() && sp.k === "B" && !sp.cr) ? "" : (GLY[sp.k] || "");
     let h = glyph ? `<span class="pc">${glyph}</span>` : "";
     if (glyph && sp.st.length) h += `<span class="plus">+</span>`;
@@ -2883,11 +2969,13 @@ function segUpdate() {
   document.getElementById("startBtn").textContent = menuMode === "online" ? "Create online game (you play White)" : menuMode === "link" ? "Create anytime game (you play White)" : "Start new game";
   document.querySelectorAll("#castleSeg button").forEach(b => b.classList.toggle("on", b.dataset.c === menuCastle));
   document.querySelectorAll("#viewSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === VIEW));
+  document.querySelectorAll("#lookSeg button").forEach(b => b.classList.toggle("on", b.dataset.l === LOOK));
   document.querySelectorAll("#ckSeg button").forEach(b => b.classList.toggle("on", b.dataset.c === CKV));
   document.querySelectorAll("#mapSeg button").forEach(b => b.classList.toggle("on", b.dataset.map === menuMap));
 }
 document.getElementById("mapSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { menuMap = b.dataset.map; segUpdate(); } });
 document.getElementById("ckSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { CKV = b.dataset.c; try { localStorage.setItem("eightranks-fan-ck", CKV); } catch (e2) {} segUpdate(); render(); } });
+document.getElementById("lookSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { setLook(b.dataset.l); segUpdate(); render(); aoeWalk(document.body); if (!aoeOn()) location.reload(); } });
 document.getElementById("viewSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { setView(b.dataset.v); segUpdate(); render(); } });
 
 document.getElementById("diffSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { menuDiff = +b.dataset.d; segUpdate(); } });
