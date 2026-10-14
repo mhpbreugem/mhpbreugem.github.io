@@ -1905,7 +1905,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1922,7 +1922,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -2057,7 +2057,7 @@ const cloudOn = () => byLink() && !!G.net.blob;
 const cloudKey = () => linkP(G) + "|" + G.winner;
 const shortCode = c => String(c || "").slice(-4).toUpperCase();
 function cloudBody() { const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60); return JSON.stringify({app: "coe", p: linkP(G), s: G.net.side, g}); }
-function cloudStore() { try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (e) {} libSave(); }
+function cloudStore() { try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (e) {} libSave(); }
 let cloudBusy = false;
 async function cloudPush() {
   if (!cloudOn() || SIM || cloudBusy) return;
@@ -2146,7 +2146,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2187,7 +2187,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v117", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v118", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2200,7 +2200,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v117"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v118"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2692,14 +2692,15 @@ function renderPanel() {
   const IC = {"hp": "<svg viewBox=\"0 0 16 16\" width=\"15\" height=\"15\" aria-hidden=\"true\"><path d=\"M8 14.2C3.2 10.8 1.5 8.6 1.5 5.9 1.5 3.8 3.1 2.3 5 2.3c1.3 0 2.4.7 3 1.8.6-1.1 1.7-1.8 3-1.8 1.9 0 3.5 1.5 3.5 3.6 0 2.7-1.7 4.9-6.5 8.3z\" fill=\"#c0392b\" stroke=\"#6e140e\" stroke-width=\"1\"/></svg>", "atk": "<svg viewBox=\"0 0 16 16\" width=\"15\" height=\"15\" aria-hidden=\"true\"><path d=\"M13.8 1.6 L14.4 2.2 L6.4 10.2 L5.8 9.6 Z\" fill=\"#d7dde2\" stroke=\"#4a5560\" stroke-width=\"0.9\"/><path d=\"M3.2 8.6 L7.4 12.8\" stroke=\"#a8741c\" stroke-width=\"1.8\" stroke-linecap=\"round\"/><path d=\"M4.9 11.1 L2.2 13.8\" stroke=\"#5b3614\" stroke-width=\"2\" stroke-linecap=\"round\"/><circle cx=\"1.9\" cy=\"14.1\" r=\"1.1\" fill=\"#e7bd52\"/></svg>", "def": "<svg viewBox=\"0 0 16 16\" width=\"15\" height=\"15\" aria-hidden=\"true\"><path d=\"M8 1.2 L14 3.4 V8 C14 11.6 11.2 13.9 8 15 C4.8 13.9 2 11.6 2 8 V3.4 Z\" fill=\"#245f96\" stroke=\"#e7bd52\" stroke-width=\"1.2\"/><path d=\"M8 3.2 V13\" stroke=\"#e7bd52\" stroke-width=\"1\"/></svg>", "rng": "<svg viewBox=\"0 0 16 16\" width=\"15\" height=\"15\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6.3\" fill=\"none\" stroke=\"#8e1f16\" stroke-width=\"1.6\"/><circle cx=\"8\" cy=\"8\" r=\"3.4\" fill=\"none\" stroke=\"#8e1f16\" stroke-width=\"1.4\"/><circle cx=\"8\" cy=\"8\" r=\"1.2\" fill=\"#8e1f16\"/></svg>"};
   const STATNAME = {HP: "hit points", att: "attack", def: "defence", rng: "range", spd: "speed"};
   const stat = (k, v, lab) => `<span class="stat" title="${STATNAME[lab]}">${IC[k]}<b>${v}</b><i>${lab}</i></span>`;
-  const A0 = age(sp.o), isTower = sp.k === "camp" && sp.st.length >= 2, isCastle = sp.k === "B" && (sp.cs || (G.rules.chk && sp.st.length >= 2)), isTC2 = G.rules.chk && sp.k === "K" && sp.st.length >= 2;
+  const A0 = age(sp.o), isTower = sp.k === "camp" && (CR() ? !!sp.cr : sp.st.length >= 2), isCastle = sp.k === "B" && (CR() ? !!sp.cr : (sp.cs || (G.rules.chk && sp.st.length >= 2))), isTC2 = G.rules.chk && sp.k === "K" && (CR() ? shoots(sp) : sp.st.length >= 2);
   const aVal = sp.k === "V" ? fmtA(atk(sp)) : isUnit(sp) ? atk(sp) : G.rules.chk && (isTower || isCastle || isTC2) ? (hasGold(sp) ? 2 : 1) : isTower ? (A0 >= 3 ? 2 : 1) : isCastle ? 1 : 0;
   IC.spd = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2.5 3.5 L7.5 8 L2.5 12.5" fill="none" stroke="#3f7d24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.5 3.5 L13.5 8 L8.5 12.5" fill="none" stroke="#3f7d24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const rVal = sp.k === "A" ? "2" : sp.k === "S" ? "3" : (sp.k === "I" || sp.k === "C") ? "1" : (isTower || isCastle || isTC2) ? (hasMH(sp.o) ? "1–2" : "2") : (sp.k === "V" && vilFight(sp.o)) ? "1" : null;
+  const rVal = sp.k === "A" ? "2" : sp.k === "S" ? "3" : (sp.k === "I" || sp.k === "C") ? "1" : (isTower || isCastle || isTC2) ? (CR() ? (sp.k === "B" ? "1–2" : sp.k === "K" ? (hasMH(sp.o) || G.rules.tcNear ? "1–2" : "2") : "2") : (hasMH(sp.o) ? "1–2" : "2")) : (sp.k === "V" && vilFight(sp.o)) ? "1" : null;
   const sVal = sp.k === "C" ? 3 : sp.k === "S" ? (G.rules.siege2 ? 2 : 1) : (sp.k === "V" || sp.k === "I" || sp.k === "A") ? 2 : null;
   const hpMake = (() => {
-    let h = sp.k === "camp" ? "" : `<span class="pc">${GLY[sp.k] || ""}</span>`;
-    if (sp.k !== "camp" && sp.st.length) h += `<span class="plus">+</span>`;
+    const glyph = sp.k === "camp" ? (CR() && sp.cr ? GLY.S : "") : (CR() && sp.k === "B" && !sp.cr) ? "" : (GLY[sp.k] || "");
+    let h = glyph ? `<span class="pc">${glyph}</span>` : "";
+    if (glyph && sp.st.length) h += `<span class="plus">+</span>`;
     for (const c of sp.st) h += `<span class="ck ${c === sp.o ? "own" + sp.o : "gold"}"></span>`;
     const wn = sp.k === "K" ? G.pile[sp.o] : (+sp.w || 0);
     if (G.rules.chk && wn) { h += `<span class="plus">·</span>`; for (let i = 0; i < wn; i++) h += `<span class="ck own${sp.o}" style="opacity:.4"></span>`; }
@@ -2714,6 +2715,9 @@ function renderPanel() {
   if (G.rules.chk && sp.k !== "K" && +sp.w) info.push(`damaged: ${+sp.w} checker${+sp.w > 1 ? "s" : ""} beside it · ${isUnit(sp) ? "heal next to the barracks" : "a villager next to it repairs"}`);
   if (G.rules.chk && sp.k === "V" && !vilFight(sp.o)) info.push("gathers, builds and repairs · does not fight");
   if (sp.k === "camp") { const [res, d] = campRes(sp); info.push(campAuto(sp) ? `gathers ${RES[res]} without rolling` : `gathers ${RES[res]} on ${campNeed(sp) + 1}+`); }
+  if (rVal && !(sp.k === "I" || sp.k === "C" || sp.k === "V")) info.push(rVal === "1–2" ? "range 1 to 2: it can hit adjacent pieces too" : `range exactly ${rVal}: it cannot hit pieces closer than ${rVal}`);
+  if (CR() && sp.k === "camp" && !sp.cr && sp.st.length) info.push("no rook yet: it does not shoot");
+  if (CR() && sp.k === "B" && !sp.cr) info.push("no queen yet: it does not shoot");
   if (sp.k === "S") info.push("shoots from where it stands");
   else if (sp.k === "I" || sp.k === "C" || (sp.k === "V" && vilFight(sp.o))) info.push(`attacking uses 1 step: walk up to ${speedOf(sp) - 1} first` + (sp.k === "V" && G.rules.vilAtk1 ? " · attack 1 · gathers" : sp.k === "V" && G.rules.vilHalf ? " · alone no damage, two together deal 1 · gathers" : "") + (sp.k === "I" && sp.w ? " · wounded: checker beside it" : ""));
   if (sp.k === "A") info.push("shoots from where it stands");
