@@ -379,6 +379,10 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
     <div class="netjoin"><input id="joinCode" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="CODE" aria-label="Game code"><button id="joinBtn">Join as Black</button></div>
     <p id="netStatus" class="onote" style="min-height:1em"></p>
   </div>
+  <div class="seg" id="diceSeg">
+    <button data-s="0">Normal dice</button>
+    <button data-s="1">Always succeed (100%)</button>
+  </div>
   <div class="seg" id="diffSeg">
     <button data-d="1">Easy computer</button>
     <button data-d="10">Hard computer</button>
@@ -446,6 +450,7 @@ svg.board{padding:0;border-width:2px;border-radius:5px;overflow:visible}
       <li><b>Food buys people and horses:</b> every chess-piece unit and its checkers. <b>Wood buys the empire:</b> buildings, their checkers, the ages and machines (the trebuchet). Gold is the gold checker.</li>
       <li><b>Everything gathers on 4+.</b> In your home quadrant a villager gathers food or wood, your choice; in the food quadrant a5–d8 food; in the wood quadrant e1–h4 wood. Food and wood hold 0–6 each.</li>
       <li>One mill and one lumber camp, in the fields and the forest only: for one action every villager next to it, standing in the same field or forest, rolls. The Town Center is not a mill.</li>
+      <li><b>Odds</b>: when a game is started with “Always succeed (100%)”, every die shows a 6, so gathering, mining and attacks by dice never fail.</li>
       <li><b>Gold</b>: from the Castle Age a villager standing on one of the <b>four centre squares</b> (d4, e4, d5, e5) takes one of the opponent’s reserve checkers as gold on 4+. Or <b>trade</b>: with a villager on a8 (food post) or h1 (wood post), buy gold for one action: pay 6 of that resource, or 6 in any mix if you hold both posts (no dice) and take one of the opponent’s reserve checkers as gold. Anyone may stand on a corner. If their reserve is empty, the gold checker comes out of their food or wood instead, their choice. Hold at most 2 gold at any time; spend as much as you like. Spent gold goes back to its owner’s reserve.</li>
     </ul>
     <h3>Ages</h3>
@@ -529,7 +534,7 @@ const isRock = (f, r) => { if (!(G && G.rules && G.rules.rocks)) return false;
   if (G.rules.rockShape === "plus") return f >= 2 && f <= 5 && r >= 2 && r <= 5 && !((f === 2 || f === 5) && (r === 2 || r === 5));
   return f >= 3 && f <= 4 && r >= 3 && r <= 4; };
 const isGold = (f, r) => !(G && G.rules && G.rules.raidGold) && f >= 3 && f <= 4 && r >= 3 && r <= 4;
-const roll = () => 1 + Math.floor(Math.random() * 6);
+const roll = () => G && G.rules && G.rules.sure ? 6 : 1 + Math.floor(Math.random() * 6);   // sure: every die shows 6
 
 /* ================= state ================= */
 let G = null;
@@ -1175,6 +1180,7 @@ function exec(a) {
   if (a.kind === "campgather" || a.kind === "gather" || a.kind === "tcgather") {} else if (!UI.msg || a.kind === "move" || ["camp", "barracks", "recruit", "upgrade", "swap", "tower", "fort", "repair", "raise", "gild", "castle", "research", "train", "age", "crown", "pack"].includes(a.kind)) UI.msg = `${SIDE[s]} ${text}.`;
   save();
 }
+function sureHint(t) { return G && G.rules && G.rules.sure ? String(t).replace(/\b[2-6]\+( \(50%\))?( each)? (gives|takes)/g, "always $3").replace(/villagers? rolls?/g, m => m.startsWith("villagers") ? "villagers work" : "villager works") : t; }
 function diceMsg(dice, text) { return dice.map(x => `<span class="roll">${x}</span>`).join("") + " " + text + "."; }
 
 function endTurn() {
@@ -1910,7 +1916,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1927,7 +1933,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -2062,7 +2068,7 @@ const cloudOn = () => byLink() && !!G.net.blob;
 const cloudKey = () => linkP(G) + "|" + G.winner;
 const shortCode = c => String(c || "").slice(-4).toUpperCase();
 function cloudBody() { const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60); return JSON.stringify({app: "coe", p: linkP(G), s: G.net.side, g}); }
-function cloudStore() { try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (e) {} libSave(); }
+function cloudStore() { try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (e) {} libSave(); }
 let cloudBusy = false;
 async function cloudPush() {
   if (!cloudOn() || SIM || cloudBusy) return;
@@ -2151,7 +2157,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2192,7 +2198,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v119", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2205,7 +2211,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v119"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v120"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2813,7 +2819,7 @@ function renderPanel() {
   if (mineP) {
     const list = pieceActions(sp);
     acts = list.map((a, i) => a.kind === "hint" ? "" :
-      `<button data-act="${i}" ${a.ok ? "" : "disabled"}>${a.label}<small>${a.ok ? (a.note || "") : a.why}</small></button>`).join("");
+      `<button data-act="${i}" ${a.ok ? "" : "disabled"}>${a.label}<small>${sureHint(a.ok ? (a.note || "") : a.why)}</small></button>`).join("");
     const hints = list.filter(a => a.kind === "hint").map(a => a.label);
     if (hints.length) acts += `<div style="width:100%;font-size:12.5px;color:var(--dim)">${hints.join(" · ")}</div>`;
     UI.list = list;
@@ -2951,17 +2957,19 @@ document.getElementById("endBtn").addEventListener("click", async () => {
   if (isAI(G.turn)) await runAI();
 });
 const menu = document.getElementById("menu"), rulesDlg = document.getElementById("rulesDlg"), logDlg = document.getElementById("logDlg");
-let menuMode = "ai", menuDiff = 10, menuCastle = "4,2", menuMap = "open";
+let menuSure = false, menuMode = "ai", menuDiff = 10, menuCastle = "4,2", menuMap = "open";
 function openMenu() {
   menuMode = G ? (byLink() ? "link" : G.mode === "hot" || G.mode === "watch" || G.mode === "online" ? G.mode : "ai") : "ai";
   const r = G ? G.rules : {};
   menuMap = r.rocks ? (r.rockMap || (r.rockShape === "plus" ? "plus" : "r2")) : "open";
   menuDiff = G && G.level ? G.level[1] : 10;
+  menuSure = !!r.sure;
   menuCastle = G && G.rules.costs && G.rules.costs[2] ? G.rules.costs[2][0] + "," + G.rules.costs[2][1] : "4,2";
   segUpdate(); libList(); menu.showModal();
 }
 function segUpdate() {
   document.querySelectorAll("#modeSeg button").forEach(b => b.classList.toggle("on", b.dataset.m === menuMode));
+  document.querySelectorAll("#diceSeg button").forEach(b => b.classList.toggle("on", (b.dataset.s === "1") === menuSure));
   document.querySelectorAll("#diffSeg button").forEach(b => b.classList.toggle("on", +b.dataset.d === menuDiff));
   document.getElementById("diffSeg").style.display = menuMode === "ai" || menuMode === "watch" ? "flex" : "none";
   document.getElementById("onlineBox").style.display = menuMode === "online" ? "" : "none";
@@ -2978,6 +2986,7 @@ document.getElementById("ckSeg").addEventListener("click", e => { const b = e.ta
 document.getElementById("lookSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { setLook(b.dataset.l); segUpdate(); render(); aoeWalk(document.body); if (!aoeOn()) location.reload(); } });
 document.getElementById("viewSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { setView(b.dataset.v); segUpdate(); render(); } });
 
+document.getElementById("diceSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { menuSure = b.dataset.s === "1"; segUpdate(); } });
 document.getElementById("diffSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { menuDiff = +b.dataset.d; segUpdate(); } });
 document.getElementById("modeSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { menuMode = b.dataset.m; segUpdate(); } });
 document.getElementById("menuBtn").onclick = openMenu;
@@ -2985,7 +2994,7 @@ document.getElementById("closeMenu").onclick = () => menu.close();
 document.getElementById("startBtn").onclick = () => {
   newGame(menuMode === "link" ? "online" : menuMode, {pools: false, garrison: false, 
     gatherHalf: true, goldHalf: true, vilHalf: false, vilAtk1: true, woundMark: true, prices2: true, milFlex: false, pawnOne: true, noHandicap: false, ecoTiers: false, bothLines: true, goldBack: true, chk: true, bTrain: false, tcDef1: true, needB: true, campTwo: false, quadrant: true, noCastle: true, noTech: true, freeVill: false, crown: true, tcEarly: true, cavWalk: true, noBeside: true, piles: false, towerFeudal: true, darkCamps: true, towerOnOne: true, rookW: 3, queenW: 4, needC: true, start2: true, darkWar: true, oneEach: true, tcSafeDark: false, tcNear: true, away3: false, crewInQuad: true, camp3: false, homeGather: true, trebCastle: true, tcMill: false, raidGold: false, trade: true, goldSupply: true, trebDiag: true, home4: true, rocks: menuMap !== "open", rockMap: menuMap === "open" ? null : menuMap, rockShape: menuMap === "plus" ? "plus" : "2x2", goldRes: true, gold2: true, needCamp: true, flex2: true, ageOne: true,
-    split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}}, menuDiff);
+    split: true, costs: {1: [0, 3, 0], 2: [0, 5, 0], 3: [0, 4, 1]}, sure: menuSure}, menuDiff);
   UI = {sel: null, mode: null, msg: "", busy: false};
   document.getElementById("over").classList.remove("show");
   if (menuMode === "link") cloudCreate(); else if (menuMode === "online") netCreate(); else netLeave();
