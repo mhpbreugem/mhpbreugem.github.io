@@ -1180,6 +1180,11 @@ function exec(a) {
   if (a.kind === "campgather" || a.kind === "gather" || a.kind === "tcgather") {} else if (!UI.msg || a.kind === "move" || ["camp", "barracks", "recruit", "upgrade", "swap", "tower", "fort", "repair", "raise", "gild", "castle", "research", "train", "age", "crown", "pack"].includes(a.kind)) UI.msg = `${SIDE[s]} ${text}.`;
   save();
 }
+function sureWalk(root) {   // 100% odds: the tips and the tree say "always", not "4+"
+  if (!(G && G.rules && G.rules.sure) || !root) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const ns = []; while (w.nextNode()) ns.push(w.currentNode);
+  for (const n of ns) { const t = n.nodeValue.replace(/\b(food|wood) [2-6]\+/g, "$1 every time").replace(/\b[2-6]\+( \(50%\))? (gives|takes)/g, "always $2").replace(/\b[Ee]verything gathers on 4\+/g, "Everything gathers every time").replace(/\bon [2-6]\+/g, "every time"); if (t !== n.nodeValue) n.nodeValue = t; }
+}
 function sureHint(t) { return G && G.rules && G.rules.sure ? String(t).replace(/\b[2-6]\+( \(50%\))?( each)? (gives|takes)/g, "always $3").replace(/villagers? rolls?/g, m => m.startsWith("villagers") ? "villagers work" : "villager works") : t; }
 function diceMsg(dice, text) { return dice.map(x => `<span class="roll">${x}</span>`).join("") + " " + text + "."; }
 
@@ -1916,7 +1921,7 @@ function netApply(m) {
     G = JSON.parse(m.state); G.mode = "online"; G.net = Object.assign(net, {v: m.v, met: true}); NET.v = m.v;
     UI.sel = null; UI.mode = null; UI.busy = false;
     const e = G.log[G.log.length - 1]; if (e && e.s !== null && e.s !== NET.side) UI.msg = `${SIDE[e.s]} ${e.t}.`;
-    try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (x) {} libSave();
+    try { localStorage.setItem("eightranks-fan-v121", JSON.stringify(G)); } catch (x) {} libSave();
     document.getElementById("over").classList.remove("show");
     render(); if (G.winner !== null) finish();
     if (was !== null && G.turn === NET.side && was !== G.turn && navigator.vibrate) try { navigator.vibrate(120); } catch (x) {}
@@ -1933,7 +1938,7 @@ function netAttach(c) {
       const first = !G.net.guest; G.net.guest = m.token;
       NET.linked = true; NET.black = true; G.net.met = true; NET.err = "";
       if (first) UI.msg = "Your opponent has joined. You move first.";
-      try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (x) {}
+      try { localStorage.setItem("eightranks-fan-v121", JSON.stringify(G)); } catch (x) {}
       netSend(); render(); return;
     }
     if (m.t === "full") { const c0 = NET.code; netLeave(); G.mode = "hot"; G.net = null; UI.msg = `Game ${c0} already has two players. Playing on this phone instead.`; render(); return; }
@@ -2068,7 +2073,7 @@ const cloudOn = () => byLink() && !!G.net.blob;
 const cloudKey = () => linkP(G) + "|" + G.winner;
 const shortCode = c => String(c || "").slice(-4).toUpperCase();
 function cloudBody() { const g = JSON.parse(JSON.stringify(G, (k, v) => k === "net" ? undefined : v)); g.log = g.log.slice(-60); return JSON.stringify({app: "coe", p: linkP(G), s: G.net.side, g}); }
-function cloudStore() { try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (e) {} libSave(); }
+function cloudStore() { try { localStorage.setItem("eightranks-fan-v121", JSON.stringify(G)); } catch (e) {} libSave(); }
 let cloudBusy = false;
 async function cloudPush() {
   if (!cloudOn() || SIM || cloudBusy) return;
@@ -2157,7 +2162,7 @@ document.getElementById("joinCode").addEventListener("keydown", e => { if (e.key
 document.addEventListener("visibilitychange", () => { if (!document.hidden && G && G.mode === "online" && NET.side === 1 && !NET.linked) netConnect(); });
 
 /* ================= persistence ================= */
-function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
+function save() { if (SIM) return; if (G && G.mode === "online") netPush(); try { localStorage.setItem("eightranks-fan-v121", JSON.stringify(G)); } catch (e) {} libSave(); if (cloudOn()) setTimeout(cloudPush, 0); }
 /* ================= saved games: one browser, several games ================= */
 const LIB = "coe-games", LIBMAX = 12;
 function libGet() { try { const o = JSON.parse(localStorage.getItem(LIB) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -2198,7 +2203,7 @@ function libOpen(id) {
   if (G && gameId() !== id) save();
   netLeave(); clearTimeout(autoT);
   G = g; UI = {sel: null, mode: null, msg: "", busy: false};
-  try { localStorage.setItem("eightranks-fan-v120", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
+  try { localStorage.setItem("eightranks-fan-v121", JSON.stringify(G)); localStorage.setItem("coe-current", id); } catch (e) {}
   document.getElementById("over").classList.remove("show");
   if (menu.open) menu.close();
   render(); if (G.winner !== null) finish();
@@ -2211,7 +2216,7 @@ document.getElementById("libList").addEventListener("click", e => {
   if (b.dataset.del) { const lib = libGet(); delete lib[b.dataset.del]; libPut(lib); libList(); }
 });
 function load() {
-  try { const t = localStorage.getItem("eightranks-fan-v120"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
+  try { const t = localStorage.getItem("eightranks-fan-v121"); if (!t) return false; const g = JSON.parse(t); if (!g || !g.pcs) return false; G = g; return true; }
   catch (e) { return false; }
 }
 
@@ -2806,7 +2811,7 @@ function renderPanel() {
   if (sp.k === "K") info.push(`${AGES[age(sp.o)]} Age` + (G.rules.chk && G.pile[sp.o] ? " · damaged: repair it before advancing" : ""));
   if (G.rules.chk && sp.k !== "K" && +sp.w) info.push(`damaged: ${+sp.w} checker${+sp.w > 1 ? "s" : ""} beside it · ${isUnit(sp) ? "heal next to the barracks" : "a villager next to it repairs"}`);
   if (G.rules.chk && sp.k === "V" && !vilFight(sp.o)) info.push("gathers, builds and repairs · does not fight");
-  if (sp.k === "camp") { const [res, d] = campRes(sp); info.push(campAuto(sp) ? `gathers ${RES[res]} without rolling` : `gathers ${RES[res]} on ${campNeed(sp) + 1}+`); }
+  if (sp.k === "camp") { const [res, d] = campRes(sp); info.push(campAuto(sp) ? `gathers ${RES[res]} without rolling` : (G.rules.sure ? `gathers ${RES[res]} every time` : `gathers ${RES[res]} on ${campNeed(sp) + 1}+`)); }
   if (rVal && !(sp.k === "I" || sp.k === "C" || sp.k === "V")) info.push(rVal === "1–2" ? "range 1 to 2: it can hit adjacent pieces too" : `range exactly ${rVal}: it cannot hit pieces closer than ${rVal}`);
   if (CR() && sp.k === "camp" && !sp.cr && sp.st.length) info.push("no rook yet: it does not shoot");
   if (CR() && sp.k === "B" && !sp.cr) info.push("no queen yet: it does not shoot");
@@ -3034,7 +3039,7 @@ function showAgeTips(a, s) {
   const d = document.getElementById("ageDlg"); if (d.open) d.close();
   document.getElementById("ageTitle").textContent = `${AGES[a]} Age` + (G.mode === "hot" ? ` · ${SIDE[s]}` : "") + ": now you can";
   document.getElementById("ageList").innerHTML = AGE_TIPS[a].map(t => `<li${t.startsWith("<b>Next") || t.startsWith("<b>Win") ? ' class="next"' : ""}>${t}</li>`).join("");
-  d.showModal(); d.scrollTop = 0; document.activeElement && document.activeElement.blur();
+  sureWalk(document.getElementById("ageList")); d.showModal(); d.scrollTop = 0; document.activeElement && document.activeElement.blur();
 }
 document.getElementById("ageOk").onclick = () => document.getElementById("ageDlg").close();
 document.getElementById("ageOff").onclick = () => { try { localStorage.setItem("coe-age-tips", "off"); } catch (e) {} document.getElementById("ageDlg").close(); };
@@ -3249,11 +3254,11 @@ function renderIndex() {
       h += `<div class="ix-cell ix-row${cls}" style="--c:${AG[i]}">${c ? (cap ? `<span class="ix-capw">` : "") + stack(c[0], c[1]) + (cap ? `<span class="ix-cap">${cap}</span></span>` : "") + stat(c[2], c[3]) + (k >= 5 ? DEF : "") : ""}</div>`;
     });
   });
-  h += `</div></div><p class="ix-foot">Everything gathers on 4+: home gives food or wood, the fields food, the forest wood; from the Castle Age a villager in the enemy’s home takes gold, or villagers on both a8 and h1 trade for it (1 action, 4+); hold 2. Food buys people and horses; wood buys buildings, ages and machines. Checker colour shows its price: <span class="ix-sw" style="background:${F}"></span> 1 food on a unit, <span class="ix-sw" style="background:${W}"></span> 1 wood on a building or machine, <span class="ix-sw" style="background:${Gd}"></span> 1 gold. A chess piece adds its own price; ages cost wood. The small shield is building defence: every building has 1.</p>`;
+  h += `</div></div><p class="ix-foot">Everything gathers on 4+: home gives food or wood, the fields food, the forest wood; from the Castle Age a villager on the four centre squares mines gold (4+), or a villager on a8 (food) or h1 (wood) buys it for 6 of that resource (any mix with both); hold 2. Food buys people and horses; wood buys buildings, ages and machines. Checker colour shows its price: <span class="ix-sw" style="background:${F}"></span> 1 food on a unit, <span class="ix-sw" style="background:${W}"></span> 1 wood on a building or machine, <span class="ix-sw" style="background:${Gd}"></span> 1 gold. A chess piece adds its own price; ages cost wood. The small shield is building defence: every building has 1.</p>`;
   document.getElementById("treeBody").innerHTML = h;
 }
 
-document.getElementById("treeBtn").onclick = () => { renderIndex(); const d = document.getElementById("treeDlg"); d.showModal(); d.scrollTop = 0; document.activeElement && document.activeElement.blur(); requestAnimationFrame(drawTreeLines); };
+document.getElementById("treeBtn").onclick = () => { renderIndex(); sureWalk(document.getElementById("treeDlg")); const d = document.getElementById("treeDlg"); d.showModal(); d.scrollTop = 0; document.activeElement && document.activeElement.blur(); requestAnimationFrame(drawTreeLines); };
 window.addEventListener("resize", () => { if (document.getElementById("treeDlg").open) drawTreeLines(); });
 document.getElementById("closeTree").onclick = () => document.getElementById("treeDlg").close();
 /* ================= banner ================= */
