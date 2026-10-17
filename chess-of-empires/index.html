@@ -1183,7 +1183,7 @@ function exec(a) {
 function sureWalk(root) {   // 100% odds: the tips and the tree say "always", not "4+"
   if (!(G && G.rules && G.rules.sure) || !root) return;
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const ns = []; while (w.nextNode()) ns.push(w.currentNode);
-  for (const n of ns) { const t = n.nodeValue.replace(/\b(food|wood) [2-6]\+/g, "$1 every time").replace(/\b[2-6]\+( \(50%\))? (gives|takes)/g, "always $2").replace(/\b[Ee]verything gathers on 4\+/g, "Everything gathers every time").replace(/\bon [2-6]\+/g, "every time"); if (t !== n.nodeValue) n.nodeValue = t; }
+  for (const n of ns) { const t = n.nodeValue.replace(/\b(food|wood) [2-6]\+/g, "$1 every time").replace(/\b[2-6]\+( \(50%\))? (gives|takes)/g, "always $2").replace(/\b[Ee]verything gathers on 4\+/g, "Everything gathers every time").replace(/\bon [2-6]\+/g, "every time").replace(/\(4\+\)/g, "(always)"); if (t !== n.nodeValue) n.nodeValue = t; }
 }
 function sureHint(t) { return G && G.rules && G.rules.sure ? String(t).replace(/\b[2-6]\+( \(50%\))?( each)? (gives|takes)/g, "always $3").replace(/villagers? rolls?/g, m => m.startsWith("villagers") ? "villagers work" : "villager works") : t; }
 function diceMsg(dice, text) { return dice.map(x => `<span class="roll">${x}</span>`).join("") + " " + text + "."; }
